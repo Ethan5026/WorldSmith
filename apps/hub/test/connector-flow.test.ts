@@ -300,3 +300,11 @@ test("world sub-routes reach their own handlers (not the generic start/stop/feat
   const bogus = await fetch(`${priv}/api/worlds/ghost/explode`, { method: "POST", headers: OWNER_POST });
   assert.equal(bogus.status, 404, "unknown actions fall through to 404");
 });
+
+test("Bedrock (Floodgate) UUIDs are accepted by the portal API (they aren't RFC 4122)", async () => {
+  const OWNER_PUT = { ...OWNER, "X-WorldSmith": "1", "Content-Type": "application/json" };
+  const r = await fetch(`${priv}/api/players/00000000-0000-0000-0009-01f7e8b0e639/role`, { method: "PUT", headers: OWNER_PUT, body: JSON.stringify({ role: "admin" }) });
+  const body = (await r.json()) as { error?: string };
+  assert.doesNotMatch(String(body.error ?? ""), /Invalid UUID/, "validation must accept Floodgate UUIDs");
+  assert.match(String(body.error ?? ""), /No such friend/, "reaches the handler");
+});

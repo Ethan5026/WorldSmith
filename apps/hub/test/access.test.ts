@@ -210,3 +210,11 @@ test("Bedrock approval before verification is saved and claimed on the first ver
   const ops = bedrock.accessFiles("oneblock").find((f) => f.path === "ops.json");
   assert.ok(ops && ops.kind === "inline" && ops.content.includes('".Ethan5026"') === false && ops.content.includes("Ethan5026"));
 });
+
+test("Bedrock operators are opped by their dotted server name, never the same-named Java account", async () => {
+  const b = new AccessService(db, fakeLookup, async () => "2535432196048835");
+  const p = await b.addBedrockPlayer("Sam", "admin");
+  assert.equal(p.role, "admin");
+  assert.ok(b.liveSyncCommands("oneblock").includes("op .Sam"));
+  assert.ok(!b.liveSyncCommands("oneblock").includes("op Sam"), "Java Sam (a regular player) is not opped");
+});

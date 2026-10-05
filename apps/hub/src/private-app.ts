@@ -122,7 +122,7 @@ export function createPrivateApp(config: Config, db: Db, oauth: OwnerApprovalOAu
       const slug = Slug.parse(req.params.slug);
       worlds.spec(slug);
       const change = z
-        .object({ mode: z.enum(["everyone", "picked"]).optional(), onlyWithMe: z.boolean().optional(), members: z.array(z.uuid()).max(500).optional() })
+        .object({ mode: z.enum(["everyone", "picked"]).optional(), onlyWithMe: z.boolean().optional(), members: z.array(z.guid()).max(500).optional() })
         .parse(req.body);
       access.setWorldAccess(slug, change);
       await worlds.syncAccess(slug);
@@ -222,7 +222,7 @@ export function createPrivateApp(config: Config, db: Db, oauth: OwnerApprovalOAu
     csrf,
     handle(async (req) => {
       const { role } = z.object({ role: z.enum(["admin", "player"]) }).parse(req.body);
-      const player = access.setRole(z.uuid().parse(req.params.uuid), role);
+      const player = access.setRole(z.guid().parse(req.params.uuid), role);
       await worlds.syncAccessEverywhere();
       return player;
     }),
@@ -231,7 +231,7 @@ export function createPrivateApp(config: Config, db: Db, oauth: OwnerApprovalOAu
     "/api/players/:uuid",
     csrf,
     handle(async (req) => {
-      access.removePlayer(z.uuid().parse(req.params.uuid));
+      access.removePlayer(z.guid().parse(req.params.uuid));
       await worlds.syncAccessEverywhere();
     }),
   );

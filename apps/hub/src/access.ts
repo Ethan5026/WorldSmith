@@ -42,6 +42,8 @@ export interface Invite {
 }
 
 const NOTIFY_EVERY_MS = 10 * 60 * 1000;
+/** How the Java server names a player: Floodgate prefixes Bedrock players with ".". */
+const serverName = (p: { name: string; platform: string }): string => (p.platform === "bedrock" ? `.${p.name}` : p.name);
 /** Floodgate UUIDs are new UUID(0, xuid); anything else on a Bedrock request is unverified. */
 const floodgateShaped = (uuid: string | null): string | undefined =>
   uuid && /^00000000-0000-0000-[0-9a-f]{4}-[0-9a-f]{12}$/.test(uuid) ? uuid : undefined;
@@ -219,10 +221,10 @@ export class AccessService {
   /** whitelist.json + ops.json for one world. */
   accessFiles(slug: string): WorldFile[] {
     const allowed = this.allowedPlayers(slug);
-    const whitelist = allowed.map((p) => ({ uuid: p.uuid, name: p.platform === "bedrock" ? `.${p.name}` : p.name }));
+    const whitelist = allowed.map((p) => ({ uuid: p.uuid, name: serverName(p) }));
     const ops = allowed
       .filter((p) => p.role === "owner" || p.role === "admin")
-      .map((p) => ({ uuid: p.uuid, name: p.name, level: p.role === "owner" ? 4 : 3, bypassesPlayerLimit: true }));
+      .map((p) => ({ uuid: p.uuid, name: serverName(p), level: p.role === "owner" ? 4 : 3, bypassesPlayerLimit: true }));
     return [
       { kind: "inline", path: "whitelist.json", content: JSON.stringify(whitelist, null, 2), encoding: "utf8" },
       { kind: "inline", path: "ops.json", content: JSON.stringify(ops, null, 2), encoding: "utf8" },
@@ -232,7 +234,7 @@ export class AccessService {
   /** Console commands that make a running server match the files (ops.json has no reload command). */
   liveSyncCommands(slug: string): string[] {
     const ops = this.allowedPlayers(slug).filter((p) => p.role === "owner" || p.role === "admin");
-    return ["whitelist reload", ...ops.map((p) => `op ${p.name}`)];
+    return ["whitelist reload", ...ops.map((p) => `op ${serverName(p)}`)];
   }
 
   // ---- join requests --------------------------------------------------------------------------
