@@ -92,3 +92,17 @@ test("legacy ping detection", () => {
   assert.ok(!isLegacyPing(0x10));
   assert.ok(!isLegacyPing(undefined));
 });
+
+test("Geyser/Floodgate handshakes may carry long encrypted data; plain ones may not", () => {
+  const floodgateAddr = `play.example.net\0^Floodgate^${"A".repeat(900)}`;
+  const f = frameOf(encodeHandshake({ protocolVersion: 776, rawServerAddress: floodgateAddr, serverPort: 25565, nextState: 2 }));
+  const h = parseHandshake(f.body);
+  assert.equal(h.floodgate, true);
+  assert.equal(h.serverAddress, "play.example.net");
+  assert.equal(h.rawServerAddress, floodgateAddr, "raw address is kept intact for the backend");
+
+  const plain = frameOf(encodeHandshake({ protocolVersion: 776, rawServerAddress: "x".repeat(300), serverPort: 25565, nextState: 2 }));
+  assert.throws(() => parseHandshake(plain.body), /max 255/);
+  const normal = frameOf(encodeHandshake({ protocolVersion: 776, rawServerAddress: "play.example.net", serverPort: 25565, nextState: 2 }));
+  assert.equal(parseHandshake(normal.body).floodgate, false);
+});

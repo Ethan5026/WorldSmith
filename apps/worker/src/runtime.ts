@@ -8,6 +8,7 @@ import {
   worldVolumeName,
   worldDatapack,
   serverConfigFiles,
+  crossplayFiles,
   type WorldFile,
   type WorldSpec,
 } from "@worldsmith/core";
@@ -34,8 +35,10 @@ export class WorldRuntime {
   network: string;
   cacheDir: string;
   backups: Backups;
+  floodgateKey: string | undefined;
 
-  constructor(opts: { network: string; cacheDir: string; backupsDir: string; socketPath?: string }) {
+  constructor(opts: { network: string; cacheDir: string; backupsDir: string; floodgateKey?: string; socketPath?: string }) {
+    this.floodgateKey = opts.floodgateKey;
     this.docker = new Docker({ socketPath: opts.socketPath ?? "/var/run/docker.sock" });
     this.network = opts.network;
     this.cacheDir = opts.cacheDir;
@@ -75,7 +78,7 @@ export class WorldRuntime {
 
     // Resolve every file before touching Docker, so a bad hash leaves the world untouched.
     const files = await Promise.all(
-      [...spec.files, ...worldDatapack(spec), ...serverConfigFiles(spec), ...extraFiles].map((f) => resolveFile(f, this.cacheDir)),
+      [...spec.files, ...worldDatapack(spec), ...serverConfigFiles(spec), ...crossplayFiles(spec, this.floodgateKey), ...extraFiles].map((f) => resolveFile(f, this.cacheDir)),
     );
     await this.ensureImage(compiled.image);
 

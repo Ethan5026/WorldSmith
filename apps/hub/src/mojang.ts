@@ -25,3 +25,24 @@ export async function lookupJavaProfile(name: string): Promise<{ uuid: string; n
   cache.set(key, { value, until: Date.now() + (value ? 60 : 5) * 60_000 });
   return value;
 }
+
+/** Floodgate's Java-side UUID for a Bedrock player: new UUID(0, xuid). */
+export function floodgateUuid(xuid: bigint | string): string {
+  const hex = BigInt(xuid).toString(16).padStart(16, "0");
+  return `00000000-0000-0000-${hex.slice(0, 4)}-${hex.slice(4)}`;
+}
+
+/**
+ * Bedrock gamertag → Xbox XUID via GeyserMC's global API. Returns null if no such gamertag.
+ * The API may not know players who have never joined any Geyser server (503); callers explain that.
+ */
+export async function lookupBedrockXuid(gamertag: string): Promise<string | null> {
+  const res = await fetch(`https://api.geysermc.org/v2/xbox/xuid/${encodeURIComponent(gamertag)}`, { signal: AbortSignal.timeout(6000) });
+  if (res.status === 200) {
+    // Read the digits as text: XUIDs are 16-digit integers and must never pass through a float.
+    const m = /"xuid"\s*:\s*"?(\d+)"?/.exec(await res.text());
+    return m ? m[1]! : null;
+  }
+  if (res.status === 400 || res.status === 404 || res.status === 204) return null;
+  throw new Error(`Couldn't look up that Xbox gamertag right now (GeyserMC API ${res.status}). Ask them to join once, then approve their request.`);
+}

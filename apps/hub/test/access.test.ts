@@ -116,3 +116,30 @@ test("the owner can't be removed; removing a friend drops their world membership
   access.removePlayer(PROFILES.sam!);
   assert.deepEqual(access.worldAccess("lab").members, []);
 });
+
+test("Bedrock players: XUID → Floodgate UUID, separate from Java names, dot-prefixed in whitelists", async () => {
+  const { floodgateUuid } = await import("../src/mojang.ts");
+  assert.equal(floodgateUuid("2535432196048835"), "00000000-0000-0000-0009-01f64f65c7c3");
+
+  const bedrock = new AccessService(db, fakeLookup, async (tag) => (tag.toLowerCase() === "sam" || tag === "Sky Rider" ? "2535432196048835" : null));
+  const p = await bedrock.addBedrockPlayer("Sky Rider");
+  assert.equal(p.platform, "bedrock");
+  assert.equal(p.name, "Sky_Rider", "Geyser replaces spaces with underscores");
+  assert.equal(p.uuid, "00000000-0000-0000-0009-01f64f65c7c3");
+  assert.ok(bedrock.findApproved("sky_rider", undefined, "bedrock"));
+  assert.equal(bedrock.findApproved("Sky_Rider", undefined, "java"), undefined, "a Java account with that name is someone else");
+  assert.equal(bedrock.findApproved("Sam", undefined, "bedrock"), undefined, "Java Sam is not Bedrock Sam");
+
+  const wl = bedrock.accessFiles("oneblock").find((f) => f.path === "whitelist.json");
+  assert.ok(wl && wl.kind === "inline" && wl.content.includes('".Sky_Rider"'));
+  await assert.rejects(bedrock.addBedrockPlayer("NobodyHere"), /No Xbox account/);
+});
+
+test("a Bedrock stranger's request becomes a Bedrock friend when approved", async () => {
+  const bedrock = new AccessService(db, fakeLookup, async () => "1234567890123456");
+  const { request } = bedrock.recordAttempt("Blocky", undefined, "oneblock", "bedrock");
+  assert.equal(request.platform, "bedrock");
+  const p = await bedrock.approve(request.id);
+  assert.equal(p.platform, "bedrock");
+  assert.match(p.uuid, /^00000000-0000-0000-/);
+});

@@ -34,7 +34,9 @@ export async function resolveFile(file: WorldFile, cacheDir: string): Promise<Re
     };
   }
   mkdirSync(cacheDir, { recursive: true });
-  const cached = path.join(cacheDir, file.sha512);
+  const expected = file.sha512 ? { algo: "sha512", hex: file.sha512 } : { algo: "sha256", hex: file.sha256 ?? "" };
+  if (!expected.hex) throw new FileError(`No hash pinned for ${file.url}`);
+  const cached = path.join(cacheDir, expected.hex);
   if (existsSync(cached)) return { path: file.path, data: readFileSync(cached) };
 
   const res = await fetch(file.url, { redirect: "follow", signal: AbortSignal.timeout(120_000) });
@@ -51,9 +53,9 @@ export async function resolveFile(file: WorldFile, cacheDir: string): Promise<Re
     chunks.push(Buffer.from(chunk));
   }
   const data = Buffer.concat(chunks);
-  const actual = createHash("sha512").update(data).digest("hex");
-  if (actual !== file.sha512) {
-    throw new FileError(`Hash mismatch for ${file.url}: expected ${file.sha512.slice(0, 16)}…, got ${actual.slice(0, 16)}…`);
+  const actual = createHash(expected.algo).update(data).digest("hex");
+  if (actual !== expected.hex) {
+    throw new FileError(`Hash mismatch for ${file.url}: expected ${expected.hex.slice(0, 16)}…, got ${actual.slice(0, 16)}…`);
   }
   const tmp = `${cached}.tmp`;
   writeFileSync(tmp, data);

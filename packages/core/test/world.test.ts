@@ -20,7 +20,7 @@ test("OneBlock recipe instantiates with pinned, hash-checked plugin files in the
   const paths = spec.files.map((f) => f.path);
   assert.ok(paths.includes("plugins/BentoBox-3.23.3.jar"));
   assert.ok(paths.includes("plugins/BentoBox/addons/AOneBlock-1.28.0.jar"), "add-on goes in BentoBox/addons");
-  for (const f of spec.files) if (f.kind === "download") assert.match(f.sha512, /^[0-9a-f]{128}$/);
+  for (const f of spec.files) if (f.kind === "download") assert.match(f.sha512 ?? f.sha256 ?? "", /^[0-9a-f]{64,128}$/);
 });
 
 test("compiled worlds always enforce online-mode, whitelist and RCON secret", () => {
@@ -83,4 +83,12 @@ test("every world gets a worldsmith datapack that re-applies its game rules (26.
   assert.ok(meta && meta.kind === "inline" && JSON.parse(meta.content).pack.min_format[0] === 107);
   assert.throws(() => resolveGamerules({ ...spec, gamerules: { keepInventry: true } }), SpecError);
   assert.throws(() => resolveGamerules({ ...spec, gamerules: { keep_inventory: 3 } }), /true\/false/);
+});
+
+test("downloads accept sha256 (GeyserMC/Hangar) or sha512 (Modrinth), never neither", () => {
+  const base = { kind: "download", source: "geysermc", url: "https://download.geysermc.org/x.jar", path: "plugins/x.jar" };
+  assert.ok(WorldFile.safeParse({ ...base, sha256: "a".repeat(64) }).success);
+  assert.ok(WorldFile.safeParse({ ...base, sha512: "a".repeat(128) }).success);
+  assert.equal(WorldFile.safeParse(base).success, false);
+  assert.equal(WorldFile.safeParse({ ...base, sha256: "a".repeat(63) }).success, false);
 });

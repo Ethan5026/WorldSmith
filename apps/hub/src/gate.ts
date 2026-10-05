@@ -64,7 +64,9 @@ export class GateService {
     };
   }
 
-  async login(input: { protocol: number; username: string; claimedUuid?: string; host: string }): Promise<LoginDecision> {
+  async login(input: { protocol: number; username: string; claimedUuid?: string; host: string; platform?: "java" | "bedrock" }): Promise<LoginDecision> {
+    const platform = input.platform ?? "java";
+    const who = platform === "bedrock" ? `${input.username} (Bedrock)` : input.username;
     const slug = this.worlds.featuredSlug();
     const kick = (reason: TextComponent): LoginDecision => ({ action: "kick", reason });
     if (!slug) return kick({ text: `No world is open right now. Ask ${this.ownerName} to open one.`, color: "yellow" });
@@ -82,13 +84,13 @@ export class GateService {
       );
     }
 
-    const player = this.access.findApproved(input.username, input.claimedUuid);
+    const player = this.access.findApproved(input.username, input.claimedUuid, platform);
     if (!player) {
       if (this.access.isDenied(input.username)) return kick({ text: "You don't have access to this server.", color: "red" });
-      const { request, notify } = this.access.recordAttempt(input.username, input.claimedUuid, slug);
+      const { request, notify } = this.access.recordAttempt(input.username, input.claimedUuid, slug, platform);
       if (notify) {
         void this.push.notify({
-          title: `${input.username} wants to join`,
+          title: `${who} wants to join`,
           body: `They tried to join ${w.name}. Tap to approve or decline.`,
           url: "/#requests",
           tag: `join-${request.id}`,
@@ -170,6 +172,7 @@ const LoginInput = z.object({
   username: z.string().max(64),
   claimedUuid: z.string().max(40).optional(),
   host: z.string().max(300),
+  platform: z.enum(["java", "bedrock"]).default("java"),
 });
 
 /** Gatekeeper ↔ hub API on a Unix socket in a shared volume (never on a network). */

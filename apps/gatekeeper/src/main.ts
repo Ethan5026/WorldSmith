@@ -105,6 +105,7 @@ function handle(client: net.Socket): void {
         username,
         claimedUuid,
         host: h.serverAddress,
+        platform: h.floodgate ? "bedrock" : "java",
       });
     } catch (err) {
       log("hub_unreachable", { remote, error: (err as Error).message });

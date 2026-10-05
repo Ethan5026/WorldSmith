@@ -26,8 +26,9 @@ export const WorldFile = z.discriminatedUnion("kind", [
     project: z.string().optional(),
     version: z.string().optional(),
     url: z.url({ protocol: /^https$/ }),
-    /** Every download is hash-checked before it reaches the world. */
-    sha512: z.string().regex(/^[0-9a-f]{128}$/),
+    /** Every download is hash-checked before it reaches the world (Modrinth: sha512; GeyserMC/Hangar: sha256). */
+    sha512: z.string().regex(/^[0-9a-f]{128}$/).optional(),
+    sha256: z.string().regex(/^[0-9a-f]{64}$/).optional(),
     path: DataPath,
   }),
   z.object({
@@ -39,7 +40,11 @@ export const WorldFile = z.discriminatedUnion("kind", [
     /** Seed files: write only if the world doesn't have this file yet (never clobber later edits). */
     onlyIfMissing: z.boolean().optional(),
   }),
-]);
+]).superRefine((f, ctx) => {
+  if (f.kind === "download" && !f.sha512 && !f.sha256) {
+    ctx.addIssue({ code: "custom", message: "downloads need a sha512 or sha256 hash", path: ["sha512"] });
+  }
+});
 export type WorldFile = z.infer<typeof WorldFile>;
 
 export const WorldProperties = z

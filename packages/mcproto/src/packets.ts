@@ -8,6 +8,7 @@ import {
   encodeU16,
   encodeUuid,
   encodeVarInt,
+  ProtocolError,
   type Reader,
 } from "./codec.ts";
 
@@ -21,8 +22,17 @@ export const NextState = {
 /** First protocol version whose Login Start always carries the player UUID (1.20.2). */
 export const PROTOCOL_LOGIN_START_HAS_UUID = 764;
 
-/** Handshake frames are tiny; anything bigger before login is hostile or broken. */
-export const MAX_PRELOGIN_FRAME = 1024;
+/**
+ * Pre-login frames are small. Vanilla handshakes stay well under 300 bytes; Geyser/Floodgate
+ * handshakes carry encrypted player data in the address field and run to roughly 1–2 KB.
+ */
+export const MAX_PRELOGIN_FRAME = 4096;
+
+/** Vanilla's limit for the address field. Only Floodgate-tagged handshakes may exceed it. */
+const VANILLA_ADDRESS_MAX = 255;
+const FLOODGATE_ADDRESS_MAX = 3000;
+/** Floodgate appends "\0^Floodgate^<encrypted data>" to the address (see FloodgateCipher.IDENTIFIER). */
+const FLOODGATE_MARKER = "\0^Floodgate^";
 
 export interface Handshake {
   protocolVersion: number;
@@ -32,14 +42,23 @@ export interface Handshake {
   rawServerAddress: string;
   serverPort: number;
   nextState: number;
+  /**
+   * The connection comes from Geyser on behalf of a Bedrock player. Unverified here (the data is
+   * encrypted with the Floodgate key); the world's Floodgate rejects forgeries.
+   */
+  floodgate: boolean;
 }
 
 export function parseHandshake(body: Reader): Handshake {
   const protocolVersion = body.varInt();
-  const rawServerAddress = body.string(255);
+  const rawServerAddress = body.string(FLOODGATE_ADDRESS_MAX);
+  const floodgate = rawServerAddress.includes(FLOODGATE_MARKER);
+  if (!floodgate && rawServerAddress.length > VANILLA_ADDRESS_MAX) {
+    throw new ProtocolError(`handshake address is ${rawServerAddress.length} chars (max ${VANILLA_ADDRESS_MAX})`);
+  }
   const serverPort = body.u16();
   const nextState = body.varInt();
-  // Forge clients append "\0FML3\0" etc.; strip it for routing.
+  // Forge clients append "\0FML3\0" and Floodgate "\0^Floodgate^…"; strip it for routing.
   const host = rawServerAddress.split("\0")[0] ?? "";
   return {
     protocolVersion,
@@ -47,6 +66,7 @@ export function parseHandshake(body: Reader): Handshake {
     rawServerAddress,
     serverPort,
     nextState,
+    floodgate,
   };
 }
 

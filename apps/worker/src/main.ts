@@ -8,6 +8,7 @@ const runtime = new WorldRuntime({
   network: process.env.WORLDS_NETWORK ?? "worldsmith_worlds",
   cacheDir: process.env.CACHE_DIR ?? "/cache",
   backupsDir: process.env.BACKUPS_DIR ?? "/backups",
+  floodgateKey: process.env.FLOODGATE_KEY_B64 || undefined,
 });
 
 const port = Number(process.env.PORT ?? 7070);

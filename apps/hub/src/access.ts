@@ -5,7 +5,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import type { WorldFile } from "@worldsmith/core";
 import { audit, type Db } from "./db.ts";
-import { lookupJavaProfile } from "./mojang.ts";
+import { floodgateUuid, lookupBedrockXuid, lookupJavaProfile } from "./mojang.ts";
 
 export type Role = "owner" | "admin" | "player";
 export type AccessMode = "everyone" | "picked";
@@ -45,14 +45,18 @@ const NOTIFY_EVERY_MS = 10 * 60 * 1000;
 const sha256 = (s: string): string => createHash("sha256").update(s).digest("hex");
 
 export type ProfileLookup = (name: string) => Promise<{ uuid: string; name: string } | null>;
+export type XuidLookup = (gamertag: string) => Promise<string | null>;
+export type Platform = "java" | "bedrock";
 
 export class AccessService {
   db: Db;
   lookup: ProfileLookup;
+  lookupXuid: XuidLookup;
 
-  constructor(db: Db, lookup: ProfileLookup = lookupJavaProfile) {
+  constructor(db: Db, lookup: ProfileLookup = lookupJavaProfile, lookupXuid: XuidLookup = lookupBedrockXuid) {
     this.db = db;
     this.lookup = lookup;
+    this.lookupXuid = lookupXuid;
   }
 
   // ---- players --------------------------------------------------------------------------------
@@ -69,9 +73,17 @@ export class AccessService {
     return this.db.prepare("SELECT * FROM players WHERE role = 'owner' LIMIT 1").get() as unknown as Player | undefined;
   }
 
-  /** Approved player matching this login, or undefined. A claimed UUID must match when present. */
-  findApproved(name: string, claimedUuid?: string): Player | undefined {
-    const byName = this.db.prepare("SELECT * FROM players WHERE lower(name) = lower(?)").get(name) as unknown as Player | undefined;
+  /**
+   * Approved player matching this login, or undefined. Java: a claimed UUID must match when present.
+   * Bedrock: matched by gamertag; Floodgate on the world verifies the real Xbox identity.
+   */
+  findApproved(name: string, claimedUuid?: string, platform: Platform = "java"): Player | undefined {
+    if (platform === "bedrock") {
+      return this.db.prepare("SELECT * FROM players WHERE platform = 'bedrock' AND lower(name) = lower(?)").get(name) as unknown as
+        | Player
+        | undefined;
+    }
+    const byName = this.db.prepare("SELECT * FROM players WHERE platform = 'java' AND lower(name) = lower(?)").get(name) as unknown as Player | undefined;
     if (!byName) return claimedUuid ? this.player(claimedUuid) : undefined; // renamed account
     if (claimedUuid && byName.uuid !== claimedUuid) return undefined;
     return byName;
@@ -89,6 +101,22 @@ export class AccessService {
       .run(profile.uuid, profile.name, role, Date.now());
     audit(this.db, "player_approved", { name: profile.name, uuid: profile.uuid, role });
     return this.player(profile.uuid)!;
+  }
+
+  /** Add a Bedrock player by Xbox gamertag (Geyser replaces spaces with underscores). */
+  async addBedrockPlayer(gamertag: string, role: Role = "player"): Promise<Player> {
+    const name = gamertag.trim().replace(/ /g, "_");
+    const xuid = await this.lookupXuid(gamertag.trim());
+    if (!xuid) throw new Error(`No Xbox account has the gamertag "${gamertag}".`);
+    const uuid = floodgateUuid(xuid);
+    this.db
+      .prepare(
+        `INSERT INTO players (uuid, name, platform, role, approved_at) VALUES (?, ?, 'bedrock', ?, ?)
+         ON CONFLICT(uuid) DO UPDATE SET name = excluded.name`,
+      )
+      .run(uuid, name, role, Date.now());
+    audit(this.db, "player_approved", { name, uuid, role, platform: "bedrock" });
+    return this.player(uuid)!;
   }
 
   removePlayer(uuid: string): void {
@@ -141,7 +169,7 @@ export class AccessService {
   /** whitelist.json + ops.json for one world. */
   accessFiles(slug: string): WorldFile[] {
     const allowed = this.allowedPlayers(slug);
-    const whitelist = allowed.map((p) => ({ uuid: p.uuid, name: p.name }));
+    const whitelist = allowed.map((p) => ({ uuid: p.uuid, name: p.platform === "bedrock" ? `.${p.name}` : p.name }));
     const ops = allowed
       .filter((p) => p.role === "owner" || p.role === "admin")
       .map((p) => ({ uuid: p.uuid, name: p.name, level: p.role === "owner" ? 4 : 3, bypassesPlayerLimit: true }));
@@ -167,7 +195,12 @@ export class AccessService {
   }
 
   /** Record an attempt. Returns the request and whether the owner should be notified now. */
-  recordAttempt(name: string, claimedUuid: string | undefined, worldSlug: string | undefined): { request: JoinRequest; notify: boolean } {
+  recordAttempt(
+    name: string,
+    claimedUuid: string | undefined,
+    worldSlug: string | undefined,
+    platform: Platform = "java",
+  ): { request: JoinRequest; notify: boolean } {
     const now = Date.now();
     const open = this.db
       .prepare("SELECT * FROM join_requests WHERE lower(name) = lower(?) AND status = 'pending'")
@@ -178,9 +211,9 @@ export class AccessService {
         .run(now, claimedUuid ?? null, worldSlug ?? null, open.id);
     } else {
       this.db
-        .prepare("INSERT INTO join_requests (name, claimed_uuid, world_slug, first_seen, last_seen) VALUES (?, ?, ?, ?, ?)")
-        .run(name, claimedUuid ?? null, worldSlug ?? null, now, now);
-      audit(this.db, "join_request", { name, worldSlug });
+        .prepare("INSERT INTO join_requests (name, claimed_uuid, world_slug, platform, first_seen, last_seen) VALUES (?, ?, ?, ?, ?, ?)")
+        .run(name, platform === "bedrock" ? null : (claimedUuid ?? null), worldSlug ?? null, platform, now, now);
+      audit(this.db, "join_request", { name, worldSlug, platform });
     }
     const request = this.db
       .prepare("SELECT * FROM join_requests WHERE lower(name) = lower(?) AND status = 'pending'")
@@ -192,14 +225,17 @@ export class AccessService {
 
   pendingRequests(): (JoinRequest & { knownPlayer: boolean })[] {
     const rows = this.db.prepare("SELECT * FROM join_requests WHERE status = 'pending' ORDER BY last_seen DESC").all() as unknown as JoinRequest[];
-    return rows.map((r) => ({ ...r, knownPlayer: Boolean(this.findApproved(r.name)) }));
+    return rows.map((r) => ({ ...r, knownPlayer: Boolean(this.findApproved(r.name, undefined, r.platform as Platform)) }));
   }
 
   /** Approve a request: add the player (if new) and give them the world they asked for. Owner-only. */
   async approve(requestId: number): Promise<Player> {
     const req = this.db.prepare("SELECT * FROM join_requests WHERE id = ?").get(requestId) as unknown as JoinRequest | undefined;
     if (!req || req.status !== "pending") throw new Error("That request was already handled.");
-    const player = this.findApproved(req.name) ?? (await this.addJavaPlayer(req.name));
+    const platform = req.platform as Platform;
+    const player =
+      this.findApproved(req.name, undefined, platform) ??
+      (platform === "bedrock" ? await this.addBedrockPlayer(req.name) : await this.addJavaPlayer(req.name));
     if (req.world_slug) this.addMember(req.world_slug, player.uuid);
     this.db.prepare("UPDATE join_requests SET status = 'approved', decided_at = ? WHERE id = ?").run(Date.now(), requestId);
     audit(this.db, "join_approved", { requestId, name: player.name, worldSlug: req.world_slug });
@@ -244,14 +280,16 @@ export class AccessService {
   }
 
   /** Redeem: the token is the owner's approval. Adds the player (and the invite's world). */
-  async redeemInvite(token: string, name: string): Promise<{ player: Player; invite: Invite }> {
+  async redeemInvite(token: string, name: string, platform: Platform = "java"): Promise<{ player: Player; invite: Invite }> {
     const inv = this.checkInvite(token);
     if (!inv) throw new Error("This invite link has expired or was already used. Ask for a new one.");
     // Claim a use first, atomically, so two simultaneous redemptions can't exceed max_uses.
     const claimed = this.db.prepare("UPDATE invites SET uses = uses + 1 WHERE id = ? AND uses < max_uses AND revoked = 0").run(inv.id);
     if (claimed.changes !== 1) throw new Error("This invite link was just used up. Ask for a new one.");
     try {
-      const player = this.findApproved(name) ?? (await this.addJavaPlayer(name));
+      const player =
+        this.findApproved(name, undefined, platform) ??
+        (platform === "bedrock" ? await this.addBedrockPlayer(name) : await this.addJavaPlayer(name));
       if (inv.world_slug) this.addMember(inv.world_slug, player.uuid);
       audit(this.db, "invite_redeemed", { id: inv.id, name: player.name, worldSlug: inv.world_slug });
       return { player, invite: inv };

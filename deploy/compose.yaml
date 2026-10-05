@@ -114,6 +114,7 @@ services:
     environment:
       WORKER_TOKEN: ${WORKER_TOKEN:?set WORKER_TOKEN in deploy/.env}
       WORLDS_NETWORK: worldsmith_worlds
+      FLOODGATE_KEY_B64: ${FLOODGATE_KEY_B64:-}
     volumes:
       # Root-equivalent: the worker's API is token-protected and published nowhere.
       - /var/run/docker.sock:/var/run/docker.sock
