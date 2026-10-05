@@ -1,4 +1,12 @@
-# Bedrock friends on WorldSmith worlds (research, 2026-10-05)
+# Bedrock friends on WorldSmith worlds
+
+## Status (2026-10-05)
+
+- ✅ **Built and deployed:** Geyser Standalone 2.11.3 (`apps/geyser`) sits in the gatekeeper's network namespace. Floodgate 2.2.5 and the shared key are added automatically to Bedrock-enabled Paper worlds. The gatekeeper flags Floodgate handshakes. Bedrock join requests and invites resolve gamertag → XUID → Floodgate UUID. The portal adds Bedrock friends and stores the Bedrock address.
+- ✅ **Verified:** a Bedrock server-list ping returns the gatekeeper's MOTD ("WorldSmith · Ethan's OneBlock / Asleep · join to wake it up", Bedrock 26.51).
+- ⏳ **Still needed:** a real Bedrock client login; a playit *Minecraft Bedrock* tunnel → `127.0.0.1:19132`; MCXboxBroadcast for consoles (needs a spare Microsoft account); Floodgate-Modded for Fabric worlds.
+
+## Research (2026-10-05)
 
 ## Bottom line
 
