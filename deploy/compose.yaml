@@ -1,0 +1,137 @@
+# WorldSmith deployment. Profiles pick the machine's role:
+#   hub    → Tailscale node "worldsmith" + hub app (portal, Claude connector)
+#            + edge (gatekeeper + playit tunnel for friends)
+#   (Phase 1 adds world containers under "worker")
+#
+#   cp deploy/.env.example deploy/.env    # then edit (secrets live only there)
+#   docker compose -f deploy/compose.yaml --profile hub up -d --build
+#
+# Tailscale serve config (deploy/tailscale/serve.json):
+#   https://worldsmith.<tailnet>.ts.net        → Funnel (public)  → hub public listener :3001
+#   https://worldsmith.<tailnet>.ts.net:8443   → tailnet only     → hub portal listener :3000
+#
+# Network namespaces (security boundary):
+#   ts   ⇄ hub          private: portal trusts Tailscale identity headers on loopback
+#   gatekeeper ⇄ playit  edge: internet game traffic; can never reach the portal's loopback
+
+name: worldsmith
+
+x-hardening: &hardening
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  restart: unless-stopped
+
+services:
+  ts:
+    profiles: [hub]
+    image: tailscale/tailscale:stable
+    hostname: worldsmith
+    environment:
+      TS_HOSTNAME: worldsmith
+      TS_STATE_DIR: /var/lib/tailscale
+      # Kernel networking, not userspace: in userspace mode tailscaled forwards ANY inbound tailnet
+      # connection to the matching 127.0.0.1 port, letting tailnet peers bypass `serve` and forge
+      # the Tailscale identity headers the portal trusts. With a real tun device, loopback stays loopback.
+      TS_USERSPACE: "false"
+      TS_SERVE_CONFIG: /config/serve.json
+      # No TS_AUTHKEY: first start prints a login link (docker compose logs ts) to approve
+      # this node into your own tailnet. State persists in the ts-state volume.
+    cap_add: [NET_ADMIN]
+    devices: ["/dev/net/tun:/dev/net/tun"]
+    volumes:
+      - ts-state:/var/lib/tailscale
+      - ./tailscale/serve.json:/config/serve.json:ro
+    restart: unless-stopped
+
+  hub:
+    <<: *hardening
+    profiles: [hub]
+    build:
+      context: ..
+      dockerfile: apps/hub/Dockerfile
+    # Shares the ts container's network namespace: the hub's loopback listeners are reachable
+    # only through tailscaled (serve/funnel), never from the LAN or other containers.
+    network_mode: service:ts
+    depends_on:
+      ts:
+        condition: service_started
+        restart: true # sharing ts's network namespace: must restart whenever ts does
+    # Only what the hub needs; secrets like PLAYIT_SECRET stay out of this container.
+    environment:
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:?set in deploy/.env}
+      PORTAL_URL: ${PORTAL_URL:?set in deploy/.env}
+      OWNER_LOGIN: ${OWNER_LOGIN:?set in deploy/.env}
+      OWNER_NAME: ${OWNER_NAME:-the owner}
+      WORLD_STATUS_TARGET: ${WORLD_STATUS_TARGET:-host.docker.internal:25601}
+      WORKER_URL: ${WORKER_URL:-http://worker:7070}
+      WORKER_TOKEN: ${WORKER_TOKEN:?set WORKER_TOKEN in deploy/.env}
+    volumes:
+      - hub-data:/data
+    tmpfs: [/tmp]
+
+  # ---- edge: the only internet-facing game traffic -------------------------------------------
+  # Phase 0: runs the spike gatekeeper from source. Phase 1 replaces it with the hub's gatekeeper.
+  gatekeeper:
+    <<: *hardening
+    profiles: [hub]
+    image: node:24-alpine
+    user: node
+    working_dir: /app
+    command: ["node", "spikes/spike-e-gatekeeper/gatekeeper.ts"]
+    environment:
+      GK_LISTEN: 0.0.0.0:25565
+      GK_BACKEND: ${GK_BACKEND:-host.docker.internal:25601}
+      GK_PROTOCOL: "776"
+      GK_VERSION_NAME: "26.2"
+      GK_ALLOW: ${GK_ALLOW:-Ethan5026}
+      GK_OWNER: ${OWNER_NAME:-the owner}
+      GK_WORLD: Spike World
+    volumes:
+      - ../package.json:/app/package.json:ro
+      - ../packages/mcproto:/app/packages/mcproto:ro
+      - ../spikes/spike-e-gatekeeper:/app/spikes/spike-e-gatekeeper:ro
+    ports:
+      - "127.0.0.1:25565:25565" # local testing from this PC only; friends come in via playit
+
+  playit:
+    profiles: [hub]
+    image: ghcr.io/playit-cloud/playit-agent:1.0.10
+    # Same namespace as the gatekeeper, so a tunnel's default local address 127.0.0.1:25565
+    # reaches it without host networking.
+    network_mode: service:gatekeeper
+    depends_on:
+      gatekeeper:
+        condition: service_started
+        restart: true
+    environment:
+      SECRET_KEY: ${PLAYIT_SECRET:?set PLAYIT_SECRET in deploy/.env}
+    security_opt: ["no-new-privileges:true"]
+    restart: unless-stopped
+
+  # ---- worker: runs the world containers -------------------------------------------------------
+  worker:
+    profiles: [worker]
+    build:
+      context: ..
+      dockerfile: apps/worker/Dockerfile
+    environment:
+      WORKER_TOKEN: ${WORKER_TOKEN:?set WORKER_TOKEN in deploy/.env}
+      WORLDS_NETWORK: worldsmith_worlds
+    volumes:
+      # Root-equivalent: the worker's API is token-protected and published nowhere.
+      - /var/run/docker.sock:/var/run/docker.sock
+      - worker-cache:/cache
+    networks: [default, worlds]
+    security_opt: ["no-new-privileges:true"]
+    restart: unless-stopped
+
+networks:
+  # World containers live here with no published ports; only the gatekeeper and worker can reach them.
+  worlds:
+    name: worldsmith_worlds
+
+volumes:
+  ts-state:
+  hub-data:
+  worker-cache:

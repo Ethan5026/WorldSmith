@@ -1,0 +1,35 @@
+# OneBlock: start on a single block that regenerates through 20 themed phases.
+# BentoBox + AOneBlock on Paper. Everything is server-side, so Java and Bedrock (via Geyser)
+# can both join without installing anything.
+id: oneblock
+name: OneBlock
+description: Start on one magic block that keeps regenerating through 20 themed phases. Play solo or team up on one island.
+tags: ["Java + Bedrock", "No install needed", "Plugins"]
+spec:
+  minecraft: { version: "26.2", protocol: 776, type: PAPER }
+  memoryMb: 3072
+  crossplay: { bedrock: true }
+  properties:
+    difficulty: normal
+    gamemode: survival
+    pvp: false
+    viewDistance: 10
+    simulationDistance: 8
+    spawnProtection: 0
+  files:
+    - kind: download
+      source: modrinth
+      project: bentobox
+      version: "3.23.3"
+      url: https://cdn.modrinth.com/data/aBVLHiAW/versions/Wm9asg4I/BentoBox-3.23.3.jar
+      sha512: d20a2d691d0a2cc703617e01da5f88d353bc87c834f827eaae71e374053256cf4b478aca84210c3e73983b0a7b87126faec80eed9a05dc44cf1ca4ffac175da4
+      path: plugins/BentoBox-3.23.3.jar
+    # AOneBlock is a BentoBox add-on: it must live in plugins/BentoBox/addons, not plugins/.
+    # Modrinth tags it up to 26.1.2; its changelog targets 26.x — the first boot verifies it.
+    - kind: download
+      source: modrinth
+      project: aoneblock
+      version: "1.28.0"
+      url: https://cdn.modrinth.com/data/qq7CK8U4/versions/SO3SQFxw/AOneBlock-1.28.0.jar
+      sha512: f085477bbc32e925f46dd7e64da6b3b9b2e625fad40f67766461f8faea382334e6d78bcce5b9c6a4672418307ab8d57c3367483d81aab827129208039b83937c
+      path: plugins/BentoBox/addons/AOneBlock-1.28.0.jar

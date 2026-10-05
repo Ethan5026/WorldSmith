@@ -1,0 +1,14 @@
+{
+  "name": "@worldsmith/core",
+  "version": "0.1.0",
+  "private": true,
+  "description": "WorldSmith domain model: world plans, crossplay (Java/Bedrock) priorities and differences, resolver, compiler.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "zod": "^4.6.5",
+    "yaml": "^2.8.0"
+  }
+}

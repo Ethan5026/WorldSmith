@@ -1,0 +1,14 @@
+# Plain survival on Paper (faster than the vanilla server, same gameplay).
+id: vanilla
+name: Survival
+description: Classic survival with nothing added. A clean slate for the builder.
+tags: ["Java + Bedrock", "No install needed"]
+spec:
+  minecraft: { version: "26.2", protocol: 776, type: PAPER }
+  memoryMb: 2048
+  crossplay: { bedrock: true }
+  properties:
+    difficulty: normal
+    gamemode: survival
+    viewDistance: 10
+    simulationDistance: 8

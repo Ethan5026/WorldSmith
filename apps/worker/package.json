@@ -1,0 +1,23 @@
+{
+  "name": "@worldsmith/worker",
+  "version": "0.1.0",
+  "private": true,
+  "description": "WorldSmith worker: runs one itzg/minecraft-server container per world via the Docker API.",
+  "type": "module",
+  "scripts": {
+    "start": "node src/main.ts"
+  },
+  "dependencies": {
+    "@worldsmith/core": "workspace:*",
+    "@worldsmith/mcproto": "workspace:*",
+    "dockerode": "^4.0.7",
+    "express": "^5.2.1",
+    "tar-stream": "^3.1.7",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/dockerode": "^3.3.42",
+    "@types/express": "^5.0.0",
+    "@types/tar-stream": "^3.1.4"
+  }
+}

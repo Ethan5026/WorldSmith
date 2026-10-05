@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>WorldSmith</title>
+  <meta name="theme-color" content="#182120">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="WorldSmith">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/icon-192.png">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <header class="top">
+    <div class="brand"><img src="/icon-192.png" alt="" width="28" height="28"><span>WorldSmith</span></div>
+    <span id="greeting" class="muted"></span>
+  </header>
+
+  <main>
+    <section id="connections" aria-labelledby="h-connections" hidden>
+      <h2 id="h-connections">Claude wants to connect</h2>
+      <div id="pending-list" class="stack"></div>
+    </section>
+
+    <section aria-labelledby="h-world">
+      <div class="section-head">
+        <h2 id="h-world">Featured world</h2>
+        <span id="world-pill" class="pill">checking…</span>
+      </div>
+      <div class="card">
+        <p id="world-motd" class="world-motd">…</p>
+        <dl class="facts">
+          <div><dt>Version</dt><dd id="world-version">–</dd></div>
+          <div><dt>Players</dt><dd id="world-players">–</dd></div>
+          <div><dt>Ping</dt><dd id="world-latency">–</dd></div>
+        </dl>
+      </div>
+    </section>
+
+    <section aria-labelledby="h-claude">
+      <h2 id="h-claude">Claude connector</h2>
+      <div id="active-list" class="stack"></div>
+      <p class="muted small">Add the connector in claude.ai → Customize → Connectors using the address below. Every new connection must be approved here.</p>
+      <code id="mcp-url" class="url"></code>
+    </section>
+
+    <section aria-labelledby="h-notify">
+      <h2 id="h-notify">Notifications</h2>
+      <div class="card stack">
+        <p id="notify-state" class="small"></p>
+        <div class="row">
+          <button id="notify-enable" type="button" class="primary">Turn on notifications</button>
+          <button id="notify-test" type="button">Send a test</button>
+        </div>
+        <p id="ios-hint" class="muted small" hidden>On iPhone, first tap Share → Add to Home Screen, then open WorldSmith from your home screen to turn on notifications.</p>
+      </div>
+    </section>
+  </main>
+  <p id="toast" class="toast" role="status" aria-live="polite" hidden></p>
+</body>
+</html>

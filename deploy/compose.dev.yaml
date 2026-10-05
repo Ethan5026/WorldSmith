@@ -1,0 +1,6 @@
+# Development only: reach the worker API from this PC (loopback) for manual testing.
+#   docker compose -f deploy/compose.yaml -f deploy/compose.dev.yaml --profile hub --profile worker up -d
+services:
+  worker:
+    ports:
+      - "127.0.0.1:7070:7070"
