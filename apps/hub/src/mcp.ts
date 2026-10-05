@@ -10,6 +10,37 @@ import { z } from "zod";
 import type { Config } from "./config.ts";
 import type { HubServices } from "./services.ts";
 import { audit } from "./db.ts";
+import { checkBlockState, checkGamerule, LEGACY_GAMERULES, loadVersion, type McVersionData } from "@worldsmith/mcdata";
+
+/**
+ * Check and normalize one console command against the world's exact Minecraft version.
+ * Translates pre-26.x game rule names; rejects invalid block states before they run.
+ */
+export function prepareCommand(data: McVersionData | undefined, raw: string): { command: string; note?: string } | { error: string } {
+  const command = raw.trim().replace(/^\//, "");
+  if (!data) return { command };
+  const gr = /^gamerule\s+(\S+)(.*)$/s.exec(command);
+  if (gr) {
+    const r = checkGamerule(data, gr[1]!);
+    if (!r.ok) return { error: `${r.error}${r.suggestions.length ? ` Did you mean: ${r.suggestions.join(", ")}?` : ""}` };
+    if (r.translatedFrom) {
+      let rest = gr[2] ?? "";
+      if (r.note === "inverted") rest = rest.replace(/\b(true|false)\b/, (b) => (b === "true" ? "false" : "true"));
+      return { command: `gamerule ${r.name}${rest}`, note: `"${r.translatedFrom}" is called "${r.name}" in ${data.version}${r.note === "inverted" ? " (meaning inverted, value flipped)" : ""}.` };
+    }
+    return { command };
+  }
+  const block =
+    /^setblock\s+\S+\s+\S+\s+\S+\s+([a-z0-9_:./-]+(?:\[[^\]]*\])?)/.exec(command)?.[1] ??
+    /^fill\s+(?:\S+\s+){6}([a-z0-9_:./-]+(?:\[[^\]]*\])?)/.exec(command)?.[1];
+  if (block) {
+    const issues = checkBlockState(data, block);
+    if (issues.length) {
+      return { error: issues.map((i) => `${i.error}${i.suggestions.length ? ` Valid: ${i.suggestions.slice(0, 8).join(", ")}` : ""}`).join(" ") };
+    }
+  }
+  return { command };
+}
 
 /** Commands that would let someone new in or remove the owner's control: portal only. */
 const BLOCKED: { re: RegExp; why: string }[] = [
@@ -104,16 +135,72 @@ export function createMcpServer(config: Config, services: HubServices, clientId?
     async ({ slug, commands }) => {
       const s = resolve(slug);
       for (const c of commands) {
-        const hit = BLOCKED.find((b) => b.re.test(c.trim()));
+        const hit = BLOCKED.find((b) => b.re.test(c.trim().replace(/^\//, "")));
         if (hit) return { isError: true, content: [{ type: "text", text: `Not allowed: "${c}". ${hit.why}` }] };
+      }
+      // Validate everything first, so a typo in command 7 doesn't leave commands 1–6 half-built.
+      const data = loadVersion(worlds.spec(s).minecraft.version);
+      const prepared = commands.map((c) => ({ original: c, ...prepareCommand(data, c) }));
+      const bad = prepared.filter((p): p is { original: string; error: string } => "error" in p);
+      if (bad.length) {
+        return {
+          isError: true,
+          content: [{ type: "text", text: `Nothing was run. Fix these first:\n${bad.map((b) => `- ${b.original}: ${b.error}`).join("\n")}` }],
+        };
       }
       const view = await worlds.view(s, true);
       if (view.state !== "online") {
         return { isError: true, content: [{ type: "text", text: `${view.name} is ${view.state}. Start it first (start_world), then retry.` }] };
       }
-      const outputs = await services.worker.rcon(s, commands.map((c) => c.trim().replace(/^\//, "")));
-      audit(services.worlds.db, "claude_commands", { slug: s, clientId, commands });
-      return json(commands.map((c, i) => ({ command: c, output: (outputs[i] ?? "").replace(/§./g, "") })));
+      const ready = prepared as { original: string; command: string; note?: string }[];
+      const outputs = await services.worker.rcon(s, ready.map((p) => p.command));
+      audit(services.worlds.db, "claude_commands", { slug: s, clientId, commands: ready.map((p) => p.command) });
+      return json(
+        ready.map((p, i) => ({
+          command: p.command,
+          ...(p.note ? { note: p.note } : {}),
+          output: (outputs[i] ?? "").replace(/§./g, ""),
+        })),
+      );
+    },
+  );
+
+  server.registerTool(
+    "minecraft_reference",
+    {
+      title: "Minecraft reference",
+      description:
+        "Exact facts for the world's Minecraft version (generated from the server itself): a block's valid " +
+        "states, all game rule names and types (26.x renamed many, e.g. keepInventory → keep_inventory), " +
+        "or the list of commands. Use before building with setblock/fill or changing game rules.",
+      inputSchema: {
+        slug: slugArg,
+        kind: z.enum(["block", "gamerules", "commands", "version"]),
+        name: z.string().max(64).optional().describe("Block id for kind=block, e.g. repeater or minecraft:chain_command_block"),
+      },
+      annotations: { readOnlyHint: true },
+    },
+    async ({ slug, kind, name }) => {
+      const version = worlds.spec(resolve(slug)).minecraft.version;
+      const data = loadVersion(version);
+      if (!data) return { isError: true, content: [{ type: "text", text: `No reference data for Minecraft ${version} yet.` }] };
+      if (kind === "version") {
+        return json({ version: data.version, protocol: data.protocol, dataVersion: data.dataVersion, dataPackFormat: data.dataPack, javaVersion: data.javaVersion });
+      }
+      if (kind === "commands") return json(data.commands);
+      if (kind === "gamerules") {
+        return json({
+          gamerules: data.gamerules,
+          renamedFromOlderVersions: Object.fromEntries(Object.entries(LEGACY_GAMERULES).map(([k, v]) => [k, v.note ? `${v.name} (${v.note})` : v.name])),
+        });
+      }
+      const id = (name ?? "").replace(/^minecraft:/, "");
+      const def = data.blocks[id];
+      if (!def) {
+        const issues = checkBlockState(data, id || "?");
+        return { isError: true, content: [{ type: "text", text: `${issues[0]?.error ?? "Unknown block"} Close matches: ${issues[0]?.suggestions.join(", ")}` }] };
+      }
+      return json({ block: `minecraft:${id}`, states: def.props ?? {}, default: def.default ?? {} });
     },
   );
 

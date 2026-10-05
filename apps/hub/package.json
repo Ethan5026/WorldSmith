@@ -13,7 +13,8 @@
     "express": "^5.2.1",
     "web-push": "^3.6.7",
     "zod": "^4.6.5",
-    "@worldsmith/core": "workspace:*"
+    "@worldsmith/core": "workspace:*",
+    "@worldsmith/mcdata": "workspace:*"
   },
   "devDependencies": {
     "@types/express": "^5.0.0",

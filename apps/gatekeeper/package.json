@@ -1,0 +1,13 @@
+{
+  "name": "@worldsmith/gatekeeper",
+  "version": "0.1.0",
+  "private": true,
+  "description": "WorldSmith gatekeeper: the internet-facing Minecraft front door. Holds no secrets; asks the hub for every decision.",
+  "type": "module",
+  "scripts": {
+    "start": "node src/main.ts"
+  },
+  "dependencies": {
+    "@worldsmith/mcproto": "workspace:*"
+  }
+}

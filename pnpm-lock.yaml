@@ -15,6 +15,12 @@ importers:
         specifier: ^5.9.0
         version: 5.9.3
 
+  apps/gatekeeper:
+    dependencies:
+      '@worldsmith/mcproto':
+        specifier: workspace:*
+        version: link:../../packages/mcproto
+
   apps/hub:
     dependencies:
       '@modelcontextprotocol/sdk':
@@ -23,6 +29,9 @@ importers:
       '@worldsmith/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@worldsmith/mcdata':
+        specifier: workspace:*
+        version: link:../../packages/mcdata
       '@worldsmith/mcproto':
         specifier: workspace:*
         version: link:../../packages/mcproto
