@@ -1,0 +1,10 @@
+{
+  "name": "@worldsmith/mcproto",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Minimal Minecraft Java protocol codec for the pre-encryption phase (handshake, status, login start, login disconnect).",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  }
+}

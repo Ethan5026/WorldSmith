@@ -1,0 +1,48 @@
+# Spike A: can the laptop boot itzg Paper on 26.2 / 26.3, how fast, and how much RAM?
+# Ports bind to 127.0.0.1 only — nothing is reachable from the LAN or internet.
+# World data lives in named volumes (inside WSL's ext4), not Windows bind mounts,
+# because bind mounts through Docker Desktop are much slower for region-file I/O.
+#
+#   docker compose -f spikes/spike-a-worlds/compose.yaml up -d paper-262
+#   docker compose -f spikes/spike-a-worlds/compose.yaml down -v   # cleanup
+
+x-world: &world
+  image: itzg/minecraft-server:java25
+  environment: &world-env
+    EULA: "TRUE"
+    TYPE: PAPER
+    MEMORY: 2G
+    ONLINE_MODE: "TRUE"
+    ENABLE_WHITELIST: "TRUE"
+    ENFORCE_WHITELIST: "TRUE"
+    HIDE_ONLINE_PLAYERS: "TRUE"
+    VIEW_DISTANCE: "10"
+    SIMULATION_DISTANCE: "8"
+    MOTD: "WorldSmith spike A"
+    ENABLE_RCON: "TRUE"
+  deploy:
+    resources:
+      limits:
+        memory: 3g
+  restart: "no"
+
+services:
+  paper-262:
+    <<: *world
+    environment:
+      <<: *world-env
+      VERSION: "26.2"
+    ports: ["127.0.0.1:25601:25565"]
+    volumes: ["paper-262:/data"]
+
+  paper-263:
+    <<: *world
+    environment:
+      <<: *world-env
+      VERSION: "26.3"
+    ports: ["127.0.0.1:25602:25565"]
+    volumes: ["paper-263:/data"]
+
+volumes:
+  paper-262:
+  paper-263:

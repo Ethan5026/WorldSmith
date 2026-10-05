@@ -1,0 +1,19 @@
+{
+  // Node 24 runs .ts directly via type stripping, so tsc is only used for type checking.
+  // Keep syntax erasable (no enums, namespaces, or parameter properties).
+  "compilerOptions": {
+    "target": "es2024",
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "lib": ["es2024"],
+    "types": ["node"],
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "erasableSyntaxOnly": true,
+    "verbatimModuleSyntax": true,
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
+    "skipLibCheck": true
+  },
+  "include": ["packages/*/src", "packages/*/test", "apps/*/src", "apps/*/scripts", "apps/*/test", "spikes/*/*.ts"]
+}

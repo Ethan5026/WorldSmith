@@ -1,0 +1,10 @@
+**/node_modules
+.git
+data
+worlds
+backups
+spikes
+docs
+**/*.sqlite*
+**/.env
+**/.env.*
