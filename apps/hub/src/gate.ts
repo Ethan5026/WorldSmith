@@ -117,7 +117,7 @@ export class GateService {
     return kick(
       lines(
         { text: `Waking up ${w.name}…\n\n`, color: "yellow", bold: true },
-        { text: "It takes about 30 seconds. Join again in a moment.", color: "white" },
+        { text: "It takes about a minute. Join again shortly.", color: "white" },
       ),
     );
   }

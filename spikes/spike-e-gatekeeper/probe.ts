@@ -22,6 +22,7 @@ const host = process.argv[2] ?? "127.0.0.1";
 const port = Number(process.argv[3] ?? 25565);
 const username = process.argv[4] ?? "WorldSmithProbe";
 const protocolOverride = process.argv[5] ? Number(process.argv[5]) : undefined;
+const claimedUuid = process.argv[6] ?? "00000000-0000-0000-0000-000000000000";
 
 function exchange(packets: Buffer[], wantFrames: number, maxFrame = 1 << 21): Promise<Frame[]> {
   return new Promise((resolve, reject) => {
@@ -69,7 +70,7 @@ const protocol: number = protocolOverride ?? status.version.protocol;
 const loginFrames = await exchange(
   [
     encodeHandshake({ protocolVersion: protocol, rawServerAddress: host, serverPort: port, nextState: NextState.Login }),
-    encodeLoginStart(username, "00000000-0000-0000-0000-000000000000"),
+    encodeLoginStart(username, claimedUuid),
   ],
   1,
   MAX_PRELOGIN_FRAME * 4,

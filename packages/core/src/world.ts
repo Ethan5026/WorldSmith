@@ -36,6 +36,8 @@ export const WorldFile = z.discriminatedUnion("kind", [
     content: z.string().max(5_000_000),
     encoding: z.enum(["utf8", "base64"]).default("utf8"),
     path: DataPath,
+    /** Seed files: write only if the world doesn't have this file yet (never clobber later edits). */
+    onlyIfMissing: z.boolean().optional(),
   }),
 ]);
 export type WorldFile = z.infer<typeof WorldFile>;
@@ -133,11 +135,34 @@ export function compileWorld(spec: WorldSpec, opts: { rconPassword: string }): C
     // Floodgate (Bedrock) players can't sign chat messages; Java servers must not require it.
     env.ENFORCE_SECURE_PROFILE = "FALSE";
   }
+  if (spec.minecraft.type === "PAPER") env.PATCH_DEFINITIONS = `/data/${PATCH_DIR}`;
   return {
     image: "itzg/minecraft-server:java25",
     env,
     memoryLimitBytes: (spec.memoryMb + JVM_OVERHEAD_MB) * 1024 * 1024,
   };
+}
+
+/** itzg applies JSON-path patch sets from this directory at every start. */
+export const PATCH_DIR = "worldsmith/patches";
+
+/**
+ * Server config WorldSmith needs regardless of recipe. Every player arrives through the gatekeeper,
+ * so the world sees one source IP for everyone: Paper's per-IP login throttle (4 s) would refuse
+ * friends who join together. The gatekeeper is the front door now, so the throttle is turned off.
+ */
+export function serverConfigFiles(spec: WorldSpec): WorldFile[] {
+  if (spec.minecraft.type !== "PAPER") return [];
+  // One patch definition per file in the directory (not the {"patches":[…]} set format).
+  const patches = {
+    file: "/data/bukkit.yml",
+    ops: [{ $set: { path: "$.settings['connection-throttle']", value: 0, "value-type": "int" } }],
+  };
+  return [
+    { kind: "inline", encoding: "utf8", onlyIfMissing: false, path: `${PATCH_DIR}/bukkit.json`, content: JSON.stringify(patches, null, 2) },
+    // Patches can't apply before bukkit.yml exists (first boot); seed it. Paper fills in every other default.
+    { kind: "inline", encoding: "utf8", onlyIfMissing: true, path: "bukkit.yml", content: "settings:\n  connection-throttle: 0\n" },
+  ];
 }
 
 /** Docker names derived from the slug, shared by worker and gatekeeper. */

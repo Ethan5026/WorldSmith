@@ -97,6 +97,17 @@ export class WorldService {
     return this.view(slug);
   }
 
+  /** Rebuild a stopped world's container from its saved spec (new settings, files, limits). Keeps the world data. */
+  async reapply(slug: string): Promise<WorldView> {
+    const spec = this.spec(slug);
+    const s = await this.worker.status(slug);
+    if (s.container === "running") throw new Error(`${spec.name} is running. Stop it first.`);
+    await this.worker.apply(spec, randomBytes(24).toString("base64url"), this.access.accessFiles());
+    this.statusCache.delete(slug);
+    audit(this.db, "world_reapplied", { slug });
+    return this.view(slug, true);
+  }
+
   async status(slug: string, fresh = false): Promise<WorkerWorldStatus> {
     const hit = this.statusCache.get(slug);
     if (!fresh && hit && Date.now() - hit.at < STATUS_TTL_MS) return hit.status;

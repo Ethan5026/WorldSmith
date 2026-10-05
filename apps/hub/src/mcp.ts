@@ -105,11 +105,11 @@ export function createMcpServer(config: Config, services: HubServices, clientId?
 
   server.registerTool(
     "start_world",
-    { title: "Start world", description: "Wake a world up. It takes about 30 seconds to be joinable.", inputSchema: { slug: slugArg } },
+    { title: "Start world", description: "Wake a world up. It takes about a minute to be joinable.", inputSchema: { slug: slugArg } },
     async ({ slug }) => {
       const s = resolve(slug);
       await worlds.start(s, `Claude (${clientId ?? "connector"})`);
-      return json({ started: s, note: "Joinable in about 30 seconds." });
+      return json({ started: s, note: "Joinable in about a minute." });
     },
   );
 

@@ -95,10 +95,11 @@ export function createPrivateApp(config: Config, db: Db, oauth: OwnerApprovalOAu
     csrf,
     handle(async (req) => {
       const slug = Slug.parse(req.params.slug);
-      const action = z.enum(["start", "stop", "feature"]).parse(req.params.action);
+      const action = z.enum(["start", "stop", "feature", "apply"]).parse(req.params.action);
       if (action === "start") await worlds.start(slug, "owner (portal)");
       if (action === "stop") await worlds.stop(slug, "owner (portal)");
       if (action === "feature") worlds.setFeatured(slug);
+      if (action === "apply") return worlds.reapply(slug);
       return worlds.view(slug, true);
     }),
   );

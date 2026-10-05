@@ -7,11 +7,12 @@ import {
   worldContainerName,
   worldVolumeName,
   worldDatapack,
+  serverConfigFiles,
   type WorldFile,
   type WorldSpec,
 } from "@worldsmith/core";
 import { RconClient, statusPing, descriptionText } from "@worldsmith/mcproto";
-import { buildTar, resolveFile } from "./files.ts";
+import { buildTar, resolveFile, type ResolvedFile } from "./files.ts";
 
 const MANAGED_LABEL = "worldsmith.world";
 const RCON_PORT = 25575;
@@ -71,7 +72,7 @@ export class WorldRuntime {
 
     // Resolve every file before touching Docker, so a bad hash leaves the world untouched.
     const files = await Promise.all(
-      [...spec.files, ...worldDatapack(spec), ...extraFiles].map((f) => resolveFile(f, this.cacheDir)),
+      [...spec.files, ...worldDatapack(spec), ...serverConfigFiles(spec), ...extraFiles].map((f) => resolveFile(f, this.cacheDir)),
     );
     await this.ensureImage(compiled.image);
 
@@ -101,14 +102,33 @@ export class WorldRuntime {
         LogConfig: { Type: "json-file", Config: { "max-size": "10m", "max-file": "3" } },
       },
     });
-    if (files.length > 0) await container.putArchive(await buildTar(files), { path: "/data" });
+    const toWrite = await this.skipExisting(container, files);
+    if (toWrite.length > 0) await container.putArchive(await buildTar(toWrite), { path: "/data" });
   }
 
   /** Write files into an existing world (running or stopped), e.g. whitelist.json or builder output. */
   async putFiles(slug: string, files: WorldFile[]): Promise<void> {
     if (!(await this.inspect(slug))) throw new Error(`World ${slug} does not exist`);
     const resolved = await Promise.all(files.map((f) => resolveFile(f, this.cacheDir)));
-    await this.container(slug).putArchive(await buildTar(resolved), { path: "/data" });
+    const toWrite = await this.skipExisting(this.container(slug), resolved);
+    if (toWrite.length > 0) await this.container(slug).putArchive(await buildTar(toWrite), { path: "/data" });
+  }
+
+  /** Drop "only if missing" files that the world already has. */
+  private async skipExisting(container: Docker.Container, files: ResolvedFile[]): Promise<ResolvedFile[]> {
+    const out: ResolvedFile[] = [];
+    for (const f of files) {
+      if (f.onlyIfMissing) {
+        try {
+          await container.infoArchive({ path: `/data/${f.path}` });
+          continue; // exists: keep the world's version
+        } catch (err) {
+          if ((err as { statusCode?: number }).statusCode !== 404) throw err;
+        }
+      }
+      out.push(f);
+    }
+    return out;
   }
 
   async start(slug: string): Promise<void> {

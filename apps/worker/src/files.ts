@@ -21,11 +21,17 @@ export class FileError extends Error {
 export interface ResolvedFile {
   path: string;
   data: Buffer;
+  /** Skip if the world already has this file (seed configs). */
+  onlyIfMissing?: boolean;
 }
 
 export async function resolveFile(file: WorldFile, cacheDir: string): Promise<ResolvedFile> {
   if (file.kind === "inline") {
-    return { path: file.path, data: Buffer.from(file.content, file.encoding === "base64" ? "base64" : "utf8") };
+    return {
+      path: file.path,
+      data: Buffer.from(file.content, file.encoding === "base64" ? "base64" : "utf8"),
+      onlyIfMissing: file.onlyIfMissing,
+    };
   }
   mkdirSync(cacheDir, { recursive: true });
   const cached = path.join(cacheDir, file.sha512);
