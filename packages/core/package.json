@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "zod": "^4.6.5",
-    "yaml": "^2.8.0"
+    "yaml": "^2.8.0",
+    "@worldsmith/mcdata": "workspace:*"
   }
 }

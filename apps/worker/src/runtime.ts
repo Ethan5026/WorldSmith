@@ -6,6 +6,7 @@ import {
   compileWorld,
   worldContainerName,
   worldVolumeName,
+  worldDatapack,
   type WorldFile,
   type WorldSpec,
 } from "@worldsmith/core";
@@ -69,7 +70,9 @@ export class WorldRuntime {
     if (existing?.State.Running) throw new Error(`World ${spec.slug} is running; stop it before applying changes`);
 
     // Resolve every file before touching Docker, so a bad hash leaves the world untouched.
-    const files = await Promise.all([...spec.files, ...extraFiles].map((f) => resolveFile(f, this.cacheDir)));
+    const files = await Promise.all(
+      [...spec.files, ...worldDatapack(spec), ...extraFiles].map((f) => resolveFile(f, this.cacheDir)),
+    );
     await this.ensureImage(compiled.image);
 
     const volume = worldVolumeName(spec.slug);

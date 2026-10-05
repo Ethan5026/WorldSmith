@@ -76,12 +76,17 @@ importers:
 
   packages/core:
     dependencies:
+      '@worldsmith/mcdata':
+        specifier: workspace:*
+        version: link:../mcdata
       yaml:
         specifier: ^2.8.0
         version: 2.9.1
       zod:
         specifier: ^4.6.5
         version: 4.6.5
+
+  packages/mcdata: {}
 
   packages/mcproto: {}
 

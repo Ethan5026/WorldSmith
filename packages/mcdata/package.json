@@ -1,0 +1,10 @@
+{
+  "name": "@worldsmith/mcdata",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Per-version Minecraft reference (blocks, block states, game rules, formats) generated from the server's own data generator.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  }
+}

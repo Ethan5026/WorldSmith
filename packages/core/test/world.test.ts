@@ -59,3 +59,28 @@ test("slugs are DNS/container safe", () => {
     assert.equal(WorldSpec.safeParse({ ...base, slug }).success, false, slug);
   }
 });
+
+test("every world gets a worldsmith datapack that re-applies its game rules (26.x names)", async () => {
+  const { worldDatapack, resolveGamerules, SpecError } = await import("../src/index.ts");
+  const base = instantiateRecipe(loadRecipes(recipesDir).get("vanilla")!, {
+    slug: "lab",
+    name: "Lab",
+    properties: { pvp: false, enableCommandBlock: true },
+  });
+  const spec = { ...base, gamerules: { keepInventory: true, doDaylightCycle: false, disableRaids: true, random_tick_speed: 6 } };
+  assert.deepEqual(resolveGamerules(spec), {
+    keep_inventory: true,
+    advance_time: false,
+    raids: false, // disableRaids=true is the inverted rule raids=false
+    random_tick_speed: 6,
+    pvp: false,
+    command_blocks_work: true,
+  });
+  const files = worldDatapack(spec);
+  const load = files.find((f) => f.path.endsWith("load.mcfunction"));
+  assert.ok(load && load.kind === "inline" && load.content.includes("gamerule keep_inventory true"));
+  const meta = files.find((f) => f.path.endsWith("pack.mcmeta"));
+  assert.ok(meta && meta.kind === "inline" && JSON.parse(meta.content).pack.min_format[0] === 107);
+  assert.throws(() => resolveGamerules({ ...spec, gamerules: { keepInventry: true } }), SpecError);
+  assert.throws(() => resolveGamerules({ ...spec, gamerules: { keep_inventory: 3 } }), /true\/false/);
+});
