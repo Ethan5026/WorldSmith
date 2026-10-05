@@ -8,6 +8,7 @@ import { z } from "zod";
 import type { Config } from "./config.ts";
 import type { OwnerApprovalOAuth } from "./oauth.ts";
 import type { HubServices } from "./services.ts";
+import { WorldProperties } from "@worldsmith/core";
 import { audit, type Db } from "./db.ts";
 
 const portalDir = fileURLToPath(new URL("../portal", import.meta.url));
@@ -83,8 +84,10 @@ export function createPrivateApp(config: Config, db: Db, oauth: OwnerApprovalOAu
     "/api/worlds/:slug/adopt",
     csrf,
     handle(async (req) => {
-      const body = z.object({ recipe: z.string(), name: z.string().min(1).max(60) }).parse(req.body);
-      return worlds.adopt(body.recipe, Slug.parse(req.params.slug), body.name);
+      const body = z
+        .object({ recipe: z.string(), name: z.string().min(1).max(60), properties: WorldProperties.optional() })
+        .parse(req.body);
+      return worlds.adopt(body.recipe, Slug.parse(req.params.slug), body.name, body.properties);
     }),
   );
   app.post(

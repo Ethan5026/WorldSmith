@@ -58,3 +58,20 @@ There's a full table in `LEGACY_GAMERULES` (`packages/mcdata`). WorldSmith trans
 1. **Prefer functions over command blocks** for game logic (timers, teleport pads, game flow). They live in the worldsmith datapack, survive restarts, can't be broken by players, and are easy to diff. Use **command blocks** when the owner asks for them, for map-maker style contraptions players interact with, or for redstone-triggered events.
 2. **Validate before running:** block states and game rules via `@worldsmith/mcdata`. Command syntax is checked by running it in the builder instance and reading the output.
 3. **Verify after running:** scoreboard probes, `data get block`, and renders/images so Claude sees the result.
+
+## Game orchestration with command blocks ✅ verified (Hunger Games pattern)
+
+The owner's acceptance prompt: *"Disneyland Hunger Games: chests around the center, a shrinking boundary, hidden chests with tools to fight other players; command blocks orchestrate the rules, countdown and automation."* These parts were proven live in the lab (not built out fully, on purpose):
+
+- **Start chain:** impulse `command_block` (`auto:0b`) + `chain_command_block`s (`auto:1b`, same `facing`) set `#state hg 1`, reset the timer, `worldborder center 0 0`, `worldborder set 200`, and announce. Triggered by a redstone block or button next to the impulse block.
+- **Countdown clock:** `repeating_command_block` (`auto:1b`) running `execute if score #state hg matches 1 run scoreboard players add #t hg 1`. Chain blocks fire on exact ticks (`if score #t hg matches 1/21/41/61/81/101`) → `title @a title {text:'5',color:'gold'}` … `GO!` → shrink border → `#state hg 2`. Measured: GO at tick 101, state switched, border shrank.
+- **Text components in commands are SNBT:** `{text:'GO!',color:'green',bold:true}`.
+- **Loot:** custom loot tables in the worldsmith datapack (`data/worldsmith/loot_table/hg/center.json`, `hidden.json`). Chests and barrels get `{LootTable:"worldsmith:hg/center"}`, which fills when a player first opens them. Preview contents without a player using `loot insert <pos> loot <table>` + `data get block <pos> Items`. Hidden chests are barrels buried a block under the surface.
+- **⚠️ `worldborder set <size> <time>`: a bare number is GAME TICKS in 26.x.** `worldborder set 20 100` shrinks over 5 s. Always write a unit: `worldborder set 20 300s`.
+- **Chain block `LastOutput`** is often absent (no feedback, or `title` with nobody online). Verify with scoreboard state, `worldborder get`, and `data get block … Items` instead.
+
+## Getting public maps
+
+- **Automatic:** CurseForge Worlds API (owner's free API key; only files whose authors allow third-party download), direct zip links, GitHub releases.
+- **Assisted:** Planet Minecraft, where most Java fan maps live (e.g. 185 Java "Disneyland" maps), returns **403 to automated clients** (bot protection). We **don't bypass it**. Claude finds the map and gives the owner the link; the owner downloads it in a browser and drops the zip into a watched folder on the PC, or uploads it in the portal. Then WorldSmith validates and imports it.
+- Fan maps of real brands (Disney) are "All Rights Reserved" fan works, fine for private play on a whitelisted server. Never redistribute them.

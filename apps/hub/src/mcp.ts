@@ -61,7 +61,11 @@ export function createMcpServer(config: Config, services: HubServices, clientId?
         "You may change anything inside the worlds right away: run console commands, op players, change gamemodes, " +
         "gamerules, time and weather, and start or stop worlds. You cannot let new people in, delete worlds, or create " +
         "new worlds yet: new people ask by trying to join, and the owner approves them in the WorldSmith portal. " +
-        "Commands run as the server console, so use player names or selectors instead of ~ coordinates relative to you.",
+        "Commands run as the server console, so use player names or selectors instead of ~ coordinates relative to you. " +
+        "Minecraft 26.x differs from older versions you may remember: game rules are snake_case and some were renamed " +
+        "(keep_inventory, advance_time, spawn_mobs; pvp is a game rule) — check minecraft_reference; text components in " +
+        "commands are SNBT like {text:'Hi',color:'gold'}; a bare number in `worldborder set <size> <time>` is game TICKS, " +
+        "so always write a unit (300s); command blocks need enable-command-block and the command_blocks_work game rule.",
     },
   );
   const slugArg = z.string().regex(/^[a-z0-9][a-z0-9-]{1,30}$/).optional().describe("World slug; defaults to the featured world");

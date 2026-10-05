@@ -1,7 +1,7 @@
 // Worlds: create from recipes, start/stop, the featured world, wake-on-join and idle sleep.
 
 import { randomBytes } from "node:crypto";
-import { instantiateRecipe, loadRecipes, WorldSpec, type Recipe } from "@worldsmith/core";
+import { instantiateRecipe, loadRecipes, WorldProperties, WorldSpec, type Recipe } from "@worldsmith/core";
 import { audit, type Db } from "./db.ts";
 import type { WorkerClient, WorkerWorldStatus } from "./worker-client.ts";
 import type { AccessService } from "./access.ts";
@@ -85,10 +85,10 @@ export class WorldService {
   }
 
   /** Adopt a world that already exists on the worker (created before the hub tracked it). */
-  async adopt(recipeId: string, slug: string, name: string): Promise<WorldView> {
+  async adopt(recipeId: string, slug: string, name: string, properties?: WorldProperties): Promise<WorldView> {
     const recipe = this.recipes.get(recipeId);
     if (!recipe) throw new Error(`No recipe called "${recipeId}".`);
-    const spec = instantiateRecipe(recipe, { slug, name });
+    const spec = instantiateRecipe(recipe, { slug, name, properties });
     this.db
       .prepare("INSERT OR IGNORE INTO worlds (slug, name, recipe, spec, created_at) VALUES (?, ?, ?, ?, ?)")
       .run(slug, name, recipeId, JSON.stringify(spec), Date.now());

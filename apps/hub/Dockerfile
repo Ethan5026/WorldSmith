@@ -21,7 +21,7 @@ COPY apps/hub/portal apps/hub/portal
 COPY recipes recipes
 
 # Named volumes inherit this ownership on first use.
-RUN mkdir -p /data && chown node:node /data
+RUN mkdir -p /data /ipc && chown node:node /data /ipc
 USER node
 ENV NODE_ENV=production DATA_DIR=/data
 CMD ["node", "apps/hub/src/main.ts"]
