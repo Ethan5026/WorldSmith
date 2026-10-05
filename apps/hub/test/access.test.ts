@@ -4,7 +4,12 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { openDb, type Db } from "../src/db.ts";
-import { AccessService } from "../src/access.ts";
+import { AccessService, type Player, type Preapproval } from "../src/access.ts";
+
+const asPlayer = (r: Player | Preapproval): Player => {
+  assert.ok(!("preapproved" in r), "expected a real player, got a pre-approval");
+  return r as Player;
+};
 
 const PROFILES: Record<string, string> = {
   ethan5026: "01cc1dfd-c796-48f0-a345-23918634d648",
@@ -139,7 +144,7 @@ test("a Bedrock stranger's request becomes a Bedrock friend when approved", asyn
   const bedrock = new AccessService(db, fakeLookup, async () => "1234567890123456");
   const { request } = bedrock.recordAttempt("Blocky", undefined, "oneblock", "bedrock");
   assert.equal(request.platform, "bedrock");
-  const p = await bedrock.approve(request.id);
+  const p = asPlayer(await bedrock.approve(request.id));
   assert.equal(p.platform, "bedrock");
   assert.match(p.uuid, /^00000000-0000-0000-/);
 });
@@ -149,7 +154,7 @@ test("a verified Bedrock request (Floodgate UUID from the login) is approved wit
   const bedrock = new AccessService(db, fakeLookup, async () => (lookups++, null));
   const verified = "00000000-0000-0000-0009-01f64f65c7c3";
   const { request } = bedrock.recordAttempt("Ethan5026", verified, "oneblock", "bedrock");
-  const p = await bedrock.approve(request.id);
+  const p = asPlayer(await bedrock.approve(request.id));
   assert.equal(lookups, 0, "no GeyserMC API call needed");
   assert.equal(p.uuid, verified);
   assert.equal(p.platform, "bedrock");
@@ -178,10 +183,30 @@ test("declines: per edition, repeat attempts go to the quiet declined bucket, an
 
 test("approve as operator; owner role can't be changed", async () => {
   const { request } = access.recordAttempt("Alex", undefined, "oneblock", "java");
-  const p = await access.approve(request.id, "admin");
+  const p = asPlayer(await access.approve(request.id, "admin"));
   assert.equal(p.role, "admin");
   const ops = access.accessFiles("oneblock").find((f) => f.path === "ops.json");
   assert.ok(ops && ops.kind === "inline" && ops.content.includes('"Alex"'));
   assert.equal(access.setRole(p.uuid, "player").role, "player");
   assert.throws(() => access.setRole(PROFILES.ethan5026!, "player"), /owner/);
+});
+
+test("Bedrock approval before verification is saved and claimed on the first verified login", async () => {
+  const bedrock = new AccessService(db, fakeLookup, async () => {
+    throw new Error("GeyserMC API 503");
+  });
+  // Old/unverified request (Geyser's random login UUID, not a Floodgate UUID).
+  const { request } = bedrock.recordAttempt("Ethan5026", "88221c97-6f59-4d9a-8e74-568335b0d341", "oneblock", "bedrock");
+  const r = await bedrock.approve(request.id, "admin");
+  assert.ok("preapproved" in r && r.preapproved, "no error: approval saved for later");
+  assert.equal(bedrock.preapprovals().length, 1);
+  assert.equal(bedrock.findApproved("Ethan5026", undefined, "bedrock"), undefined, "not a player until verified");
+
+  const claimed = await bedrock.claimPreapproval("Ethan5026", "00000000-0000-0000-0009-01f64f65c7c3");
+  assert.equal(claimed?.role, "admin");
+  assert.equal(claimed?.platform, "bedrock");
+  assert.equal(bedrock.preapprovals().length, 0, "used once");
+  assert.equal(await bedrock.claimPreapproval("Ethan5026", "00000000-0000-0000-0009-01f64f65c7c3"), undefined);
+  const ops = bedrock.accessFiles("oneblock").find((f) => f.path === "ops.json");
+  assert.ok(ops && ops.kind === "inline" && ops.content.includes('".Ethan5026"') === false && ops.content.includes("Ethan5026"));
 });

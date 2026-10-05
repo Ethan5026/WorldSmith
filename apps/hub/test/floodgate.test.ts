@@ -16,7 +16,8 @@ test("decodes and authenticates Geyser's Bedrock identity from the handshake add
 test("rejects forgeries: wrong key, tampered data, junk", () => {
   const payload = encodeFloodgateForTest(FIELDS, KEY);
   assert.equal(decodeFloodgate(payload, randomBytes(16).toString("base64")), undefined, "wrong key");
-  const tampered = payload.slice(0, -6) + (payload.endsWith("A") ? "B" : "A") + payload.slice(-5);
+  const i = payload.length - 6;
+  const tampered = payload.slice(0, i) + (payload[i] === "A" ? "B" : "A") + payload.slice(i + 1);
   assert.equal(decodeFloodgate(tampered, KEY), undefined, "GCM tag catches tampering");
   assert.equal(decodeFloodgate("^Floodgate^>garbage", KEY), undefined);
   assert.equal(decodeFloodgate("not floodgate", KEY), undefined);

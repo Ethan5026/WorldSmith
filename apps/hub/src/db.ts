@@ -116,6 +116,15 @@ export function openDb(dataDir: string): Db {
       revoked     INTEGER NOT NULL DEFAULT 0
     );
 
+    -- Bedrock approvals waiting for the player's first verified login (gives us their real XUID).
+    CREATE TABLE IF NOT EXISTS bedrock_preapprovals (
+      gamertag_key  TEXT PRIMARY KEY,     -- lowercased, spaces → underscores (Geyser's form)
+      gamertag      TEXT NOT NULL,
+      role          TEXT NOT NULL DEFAULT 'player',
+      world_slug    TEXT,
+      created_at    INTEGER NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS audit_log (
       id      INTEGER PRIMARY KEY AUTOINCREMENT,
       at      INTEGER NOT NULL,

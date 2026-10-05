@@ -77,12 +77,14 @@ export class GateService {
     floodgate?: string;
   }): Promise<LoginDecision> {
     const platform = input.platform ?? "java";
+    let verifiedBedrock: { gamertag: string; xuid: string } | undefined;
     if (platform === "bedrock" && this.floodgateKey) {
       // Verify Geyser's encrypted identity: a forged Bedrock login stops here, a real one gives the true XUID.
       const payload = input.floodgate ? floodgatePayload(input.floodgate) : undefined;
       const id = payload ? decodeFloodgate(payload, this.floodgateKey) : undefined;
       if (id) {
         input = { ...input, claimedUuid: floodgateUuid(id.xuid) };
+        verifiedBedrock = id;
       } else {
         // Fall back to the gamertag (the world's Floodgate still rejects forgeries), and record enough
         // structure — never the data itself — to diagnose a format mismatch.
@@ -113,7 +115,12 @@ export class GateService {
       );
     }
 
-    const player = this.access.findApproved(input.username, input.claimedUuid, platform);
+    let player = this.access.findApproved(input.username, input.claimedUuid, platform);
+    if (!player && verifiedBedrock) {
+      // An approval may be waiting for this (now verified) Bedrock account.
+      player = await this.access.claimPreapproval(verifiedBedrock.gamertag, input.claimedUuid!);
+      if (player) await this.worlds.syncAccessEverywhere();
+    }
     if (!player) {
       if (this.access.isDenied(input.username, platform)) {
         // Declined people go to the quiet "Declined" bucket: counted, no notification.

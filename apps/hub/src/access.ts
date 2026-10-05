@@ -50,6 +50,12 @@ const sha256 = (s: string): string => createHash("sha256").update(s).digest("hex
 export type ProfileLookup = (name: string) => Promise<{ uuid: string; name: string } | null>;
 export type XuidLookup = (gamertag: string) => Promise<string | null>;
 export type Platform = "java" | "bedrock";
+export interface Preapproval {
+  preapproved: true;
+  name: string;
+  platform: "bedrock";
+  role: Role;
+}
 
 export class AccessService {
   db: Db;
@@ -125,6 +131,42 @@ export class AccessService {
       .run(uuid, name, role, Date.now());
     audit(this.db, "player_approved", { name, uuid, role, platform: "bedrock" });
     return this.player(uuid)!;
+  }
+
+  // ---- Bedrock pre-approvals --------------------------------------------------------------------
+
+  preapproveBedrock(gamertag: string, role: Role = "player", worldSlug?: string): Preapproval {
+    const name = gamertag.trim().replace(/ /g, "_");
+    this.db
+      .prepare(
+        `INSERT INTO bedrock_preapprovals (gamertag_key, gamertag, role, world_slug, created_at) VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(gamertag_key) DO UPDATE SET role = excluded.role, world_slug = excluded.world_slug`,
+      )
+      .run(name.toLowerCase(), name, role, worldSlug ?? null, Date.now());
+    audit(this.db, "bedrock_preapproved", { gamertag: name, role, worldSlug });
+    return { preapproved: true, name, platform: "bedrock", role };
+  }
+
+  preapprovals(): { gamertag: string; role: Role; world_slug: string | null; created_at: number }[] {
+    return this.db.prepare("SELECT gamertag, role, world_slug, created_at FROM bedrock_preapprovals ORDER BY created_at DESC").all() as never;
+  }
+
+  /**
+   * Called only for VERIFIED Bedrock logins (gamertag + XUID decrypted from Geyser's data with our key),
+   * so trusting the gamertag here is safe. Turns a waiting approval into a real player.
+   */
+  async claimPreapproval(gamertag: string, verifiedUuid: string): Promise<Player | undefined> {
+    const key = gamertag.trim().replace(/ /g, "_").toLowerCase();
+    const row = this.db.prepare("SELECT * FROM bedrock_preapprovals WHERE gamertag_key = ?").get(key) as
+      | { gamertag: string; role: Role; world_slug: string | null }
+      | undefined;
+    if (!row) return undefined;
+    const player = await this.addBedrockPlayer(row.gamertag, row.role, verifiedUuid);
+    if (row.role === "admin" && player.role === "player") this.setRole(player.uuid, "admin");
+    if (row.world_slug) this.addMember(row.world_slug, player.uuid);
+    this.db.prepare("DELETE FROM bedrock_preapprovals WHERE gamertag_key = ?").run(key);
+    audit(this.db, "bedrock_preapproval_claimed", { gamertag: row.gamertag, uuid: verifiedUuid, role: row.role });
+    return this.player(player.uuid);
   }
 
   removePlayer(uuid: string): void {
@@ -275,10 +317,25 @@ export class AccessService {
   }
 
   /** Approve a request: add the player (if new) and give them the world they asked for. Owner-only. */
-  async approve(requestId: number, role: "admin" | "player" = "player"): Promise<Player> {
+  async approve(requestId: number, role: "admin" | "player" = "player"): Promise<Player | Preapproval> {
     const req = this.db.prepare("SELECT * FROM join_requests WHERE id = ?").get(requestId) as unknown as JoinRequest | undefined;
     if (!req || req.status !== "pending") throw new Error("That request was already handled.");
     const platform = req.platform as Platform;
+    if (platform === "bedrock" && !floodgateShaped(req.claimed_uuid) && !this.findApproved(req.name, undefined, "bedrock")) {
+      // Not verified yet. Try GeyserMC's gamertag lookup; if it can't help, save the approval and let
+      // their next verified Bedrock login in.
+      const looked = await this.addBedrockPlayer(req.name, role).catch(() => undefined);
+      if (looked) {
+        if (req.world_slug) this.addMember(req.world_slug, looked.uuid);
+        this.db.prepare("UPDATE join_requests SET status = 'approved', decided_at = ? WHERE id = ?").run(Date.now(), requestId);
+        audit(this.db, "join_approved", { requestId, name: looked.name, worldSlug: req.world_slug });
+        return looked;
+      }
+      const pre = this.preapproveBedrock(req.name, role, req.world_slug ?? undefined);
+      this.db.prepare("UPDATE join_requests SET status = 'approved', decided_at = ? WHERE id = ?").run(Date.now(), requestId);
+      audit(this.db, "join_approved", { requestId, name: req.name, worldSlug: req.world_slug, pending: "first verified login" });
+      return pre;
+    }
     // Bedrock requests carry the Floodgate UUID verified from Geyser's encrypted login data.
     const player =
       this.findApproved(req.name, platform === "bedrock" ? (req.claimed_uuid ?? undefined) : undefined, platform) ??
