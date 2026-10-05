@@ -95,6 +95,8 @@ async function loadWorlds() {
             actions.push(button("Put to sleep", "", async () => (await post(`/api/worlds/${w.slug}/stop`), toast(`${w.name} is asleep.`), refresh())));
           if (!w.featured) actions.push(button("Feature", "", async () => (await post(`/api/worlds/${w.slug}/feature`), toast(`Friends now join ${w.name}.`), refresh())));
           const players = w.state === "online" ? ` · ${w.players.online} playing` : "";
+          const accessBox = el("div", { class: "stack access" });
+          renderAccess(w, accessBox).catch((e) => toast(e.message));
           return el(
             "div",
             { class: `card stack world${w.featured ? " featured" : ""}` },
@@ -106,15 +108,140 @@ async function loadWorlds() {
             ),
             el("p", { class: "muted small" }, `${w.featured ? "Featured · friends join this one · " : ""}Minecraft ${w.version}${players}`),
             actions.length ? el("div", { class: "row" }, ...actions) : null,
+            accessBox,
           );
         })),
   );
   $("address-note").textContent = "Worlds sleep when nobody's on and wake when an approved friend joins (about a minute).";
 }
 
+// ---- per-world access ------------------------------------------------------------------------
+let knownPlayers = [];
+
+async function renderAccess(w, box) {
+  const acc = await api(`/api/worlds/${w.slug}/access`);
+  const save = async (change, msg) => {
+    try {
+      await api(`/api/worlds/${w.slug}/access`, { method: "PUT", body: JSON.stringify(change) });
+      toast(msg);
+    } catch (e) {
+      toast(e.message);
+    }
+    renderAccess(w, box);
+  };
+  const mode = el(
+    "select",
+    { "aria-label": `Who can join ${w.name}` },
+    el("option", { value: "everyone" }, "Everyone on my friends list"),
+    el("option", { value: "picked" }, "Only people I pick"),
+  );
+  mode.value = acc.mode;
+  mode.addEventListener("change", () =>
+    save({ mode: mode.value }, mode.value === "picked" ? `${w.name} is invite-only now.` : `All friends can join ${w.name}.`),
+  );
+  const onlyMe = el("input", { type: "checkbox", id: `only-${w.slug}` });
+  onlyMe.checked = acc.onlyWithMe;
+  onlyMe.addEventListener("change", () =>
+    save(
+      { onlyWithMe: onlyMe.checked },
+      onlyMe.checked ? `Friends can only play ${w.name} while you're on.` : `Friends can play ${w.name} anytime.`,
+    ),
+  );
+  const parts = [
+    el("label", { class: "field" }, "Who can join", mode),
+    el("label", { class: "check", for: `only-${w.slug}` }, onlyMe, " Only when I'm playing"),
+  ];
+  if (acc.mode === "picked") {
+    const friends = knownPlayers.filter((p) => p.role !== "owner");
+    parts.push(
+      friends.length === 0
+        ? el("p", { class: "muted small" }, "No friends yet. Add some below, or send an invite link for this world.")
+        : el(
+            "div",
+            { class: "row picks" },
+            ...friends.map((p) => {
+              const cb = el("input", { type: "checkbox", id: `m-${w.slug}-${p.uuid}` });
+              cb.checked = acc.members.includes(p.uuid);
+              cb.addEventListener("change", () => {
+                const members = cb.checked ? [...acc.members, p.uuid] : acc.members.filter((u) => u !== p.uuid);
+                save({ members }, cb.checked ? `${p.name} can join ${w.name}.` : `${p.name} can't join ${w.name} now.`);
+              });
+              return el("label", { class: "check", for: cb.id }, cb, ` ${p.name}`);
+            }),
+          ),
+    );
+  }
+  box.replaceChildren(...parts);
+}
+
+// ---- invites -------------------------------------------------------------------------------
+async function loadInvites(worlds) {
+  const sel = $("invite-world");
+  const current = sel.value;
+  sel.replaceChildren(el("option", { value: "" }, "Any world they're allowed on"), ...worlds.map((w) => el("option", { value: w.slug }, w.name)));
+  sel.value = current;
+  const invites = await api("/api/invites");
+  $("invite-list").replaceChildren(
+    ...invites.map((i) =>
+      el(
+        "div",
+        { class: "card row conn" },
+        el(
+          "span",
+          { class: "small" },
+          `${i.world_slug ? (worlds.find((w) => w.slug === i.world_slug)?.name ?? i.world_slug) : "Any world"} · ${i.max_uses - i.uses} use(s) left · expires ${new Date(i.expires_at).toLocaleDateString()}`,
+        ),
+        button("Revoke", "danger", async () => {
+          await api(`/api/invites/${i.id}`, { method: "DELETE" });
+          toast("Invite revoked.");
+          refresh();
+        }),
+      ),
+    ),
+  );
+  const settings = await api("/api/settings");
+  if (document.activeElement !== $("java-address")) $("java-address").value = settings.java_address ?? "";
+}
+
+$("invite-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  try {
+    const body = { days: Number($("invite-days").value), maxUses: Number($("invite-uses").value) };
+    if ($("invite-world").value) body.world = $("invite-world").value;
+    const { url } = await post("/api/invites", body);
+    const share = button("Share link", "primary", async () => {
+      if (navigator.share) await navigator.share({ title: "Join my Minecraft server", text: "You're invited to my Minecraft server:", url });
+      else {
+        await navigator.clipboard.writeText(url);
+        toast("Link copied.");
+      }
+    });
+    const copy = button("Copy", "", async () => {
+      await navigator.clipboard.writeText(url);
+      toast("Link copied.");
+    });
+    $("invite-result").replaceChildren(el("code", { class: "url" }, url), el("div", { class: "row" }, share, copy));
+    $("invite-result").hidden = false;
+    refresh();
+  } catch (err) {
+    toast(err.message);
+  }
+});
+
+$("address-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  try {
+    await api("/api/settings", { method: "PUT", body: JSON.stringify({ java_address: $("java-address").value.trim() || null }) });
+    toast("Saved. Invite pages will show this address.");
+  } catch (err) {
+    toast(err.message);
+  }
+});
+
 // ---- friends -------------------------------------------------------------------------------
 async function loadPlayers() {
   const players = await api("/api/players");
+  knownPlayers = players;
   $("player-list").replaceChildren(
     ...players.map((p) =>
       el(
@@ -224,8 +351,14 @@ async function enableNotifications(me) {
 }
 
 // ---- boot ----------------------------------------------------------------------------------
-function refresh() {
-  return Promise.all([loadRequests(), loadWorlds(), loadPlayers(), loadConnections()]).catch((e) => toast(e.message));
+async function refresh() {
+  try {
+    await loadPlayers(); // world access controls need the friends list
+    await Promise.all([loadRequests(), loadWorlds(), loadConnections()]);
+    await loadInvites((await api("/api/worlds")).worlds);
+  } catch (e) {
+    toast(e.message);
+  }
 }
 
 async function boot() {

@@ -1,12 +1,14 @@
-// Who may play: approved players, join requests, and keeping every world's whitelist/ops in sync.
-// The backend whitelist (by UUID, online-mode) is the real lock; the gatekeeper's check is the
-// friendly front door that turns strangers into join requests instead of silent rejections.
+// Who may play where: approved players, per-world guest lists, join requests, invite links, and
+// keeping each world's whitelist/ops in sync. The backend whitelist (by UUID, online-mode) is the
+// real lock; the gatekeeper's check is the friendly front door that turns "no" into a request.
 
+import { createHash, randomBytes } from "node:crypto";
 import type { WorldFile } from "@worldsmith/core";
 import { audit, type Db } from "./db.ts";
 import { lookupJavaProfile } from "./mojang.ts";
 
 export type Role = "owner" | "admin" | "player";
+export type AccessMode = "everyone" | "picked";
 
 export interface Player {
   uuid: string;
@@ -29,31 +31,133 @@ export interface JoinRequest {
   status: "pending" | "approved" | "denied";
 }
 
+export interface Invite {
+  id: number;
+  world_slug: string | null;
+  created_at: number;
+  expires_at: number;
+  max_uses: number;
+  uses: number;
+  revoked: number;
+}
+
 const NOTIFY_EVERY_MS = 10 * 60 * 1000;
+const sha256 = (s: string): string => createHash("sha256").update(s).digest("hex");
+
+export type ProfileLookup = (name: string) => Promise<{ uuid: string; name: string } | null>;
 
 export class AccessService {
   db: Db;
+  lookup: ProfileLookup;
 
-  constructor(db: Db) {
+  constructor(db: Db, lookup: ProfileLookup = lookupJavaProfile) {
     this.db = db;
+    this.lookup = lookup;
   }
+
+  // ---- players --------------------------------------------------------------------------------
 
   players(): Player[] {
     return this.db.prepare("SELECT * FROM players ORDER BY role, lower(name)").all() as unknown as Player[];
   }
 
+  player(uuid: string): Player | undefined {
+    return this.db.prepare("SELECT * FROM players WHERE uuid = ?").get(uuid) as unknown as Player | undefined;
+  }
+
+  owner(): Player | undefined {
+    return this.db.prepare("SELECT * FROM players WHERE role = 'owner' LIMIT 1").get() as unknown as Player | undefined;
+  }
+
   /** Approved player matching this login, or undefined. A claimed UUID must match when present. */
   findApproved(name: string, claimedUuid?: string): Player | undefined {
     const byName = this.db.prepare("SELECT * FROM players WHERE lower(name) = lower(?)").get(name) as unknown as Player | undefined;
-    if (!byName) {
-      // Name changed since approval? Match by account id instead.
-      return claimedUuid
-        ? (this.db.prepare("SELECT * FROM players WHERE uuid = ?").get(claimedUuid) as unknown as Player | undefined)
-        : undefined;
-    }
+    if (!byName) return claimedUuid ? this.player(claimedUuid) : undefined; // renamed account
     if (claimedUuid && byName.uuid !== claimedUuid) return undefined;
     return byName;
   }
+
+  async addJavaPlayer(name: string, role: Role = "player"): Promise<Player> {
+    const profile = await this.lookup(name);
+    if (!profile) throw new Error(`No Minecraft: Java Edition account is named "${name}".`);
+    this.db
+      .prepare(
+        `INSERT INTO players (uuid, name, platform, role, approved_at) VALUES (?, ?, 'java', ?, ?)
+         ON CONFLICT(uuid) DO UPDATE SET name = excluded.name,
+           role = CASE WHEN players.role IN ('owner','admin') THEN players.role ELSE excluded.role END`,
+      )
+      .run(profile.uuid, profile.name, role, Date.now());
+    audit(this.db, "player_approved", { name: profile.name, uuid: profile.uuid, role });
+    return this.player(profile.uuid)!;
+  }
+
+  removePlayer(uuid: string): void {
+    const p = this.player(uuid);
+    if (!p) return;
+    if (p.role === "owner") throw new Error("The owner can't be removed.");
+    this.db.prepare("DELETE FROM players WHERE uuid = ?").run(uuid);
+    this.db.prepare("DELETE FROM world_members WHERE player_uuid = ?").run(uuid);
+    audit(this.db, "player_removed", { name: p.name, uuid });
+  }
+
+  // ---- per-world access -----------------------------------------------------------------------
+
+  worldAccess(slug: string): { mode: AccessMode; onlyWithMe: boolean; members: string[] } {
+    const w = this.db.prepare("SELECT access_mode, only_with_me FROM worlds WHERE slug = ?").get(slug) as
+      | { access_mode: AccessMode; only_with_me: number }
+      | undefined;
+    const members = (this.db.prepare("SELECT player_uuid FROM world_members WHERE world_slug = ?").all(slug) as { player_uuid: string }[]).map(
+      (m) => m.player_uuid,
+    );
+    return { mode: w?.access_mode ?? "everyone", onlyWithMe: w?.only_with_me === 1, members };
+  }
+
+  setWorldAccess(slug: string, change: { mode?: AccessMode; onlyWithMe?: boolean; members?: string[] }): void {
+    if (change.mode) this.db.prepare("UPDATE worlds SET access_mode = ? WHERE slug = ?").run(change.mode, slug);
+    if (change.onlyWithMe !== undefined) this.db.prepare("UPDATE worlds SET only_with_me = ? WHERE slug = ?").run(change.onlyWithMe ? 1 : 0, slug);
+    if (change.members) {
+      this.db.prepare("DELETE FROM world_members WHERE world_slug = ?").run(slug);
+      const add = this.db.prepare("INSERT OR IGNORE INTO world_members (world_slug, player_uuid) VALUES (?, ?)");
+      for (const uuid of change.members) if (this.player(uuid)) add.run(slug, uuid);
+    }
+    audit(this.db, "world_access_changed", { slug, ...change });
+  }
+
+  addMember(slug: string, uuid: string): void {
+    this.db.prepare("INSERT OR IGNORE INTO world_members (world_slug, player_uuid) VALUES (?, ?)").run(slug, uuid);
+  }
+
+  /** Owner and admins can join every world; others depend on the world's mode. */
+  canJoin(player: Player, slug: string): boolean {
+    if (player.role === "owner" || player.role === "admin") return true;
+    const access = this.worldAccess(slug);
+    return access.mode === "everyone" || access.members.includes(player.uuid);
+  }
+
+  allowedPlayers(slug: string): Player[] {
+    return this.players().filter((p) => this.canJoin(p, slug));
+  }
+
+  /** whitelist.json + ops.json for one world. */
+  accessFiles(slug: string): WorldFile[] {
+    const allowed = this.allowedPlayers(slug);
+    const whitelist = allowed.map((p) => ({ uuid: p.uuid, name: p.name }));
+    const ops = allowed
+      .filter((p) => p.role === "owner" || p.role === "admin")
+      .map((p) => ({ uuid: p.uuid, name: p.name, level: p.role === "owner" ? 4 : 3, bypassesPlayerLimit: true }));
+    return [
+      { kind: "inline", path: "whitelist.json", content: JSON.stringify(whitelist, null, 2), encoding: "utf8" },
+      { kind: "inline", path: "ops.json", content: JSON.stringify(ops, null, 2), encoding: "utf8" },
+    ];
+  }
+
+  /** Console commands that make a running server match the files (ops.json has no reload command). */
+  liveSyncCommands(slug: string): string[] {
+    const ops = this.allowedPlayers(slug).filter((p) => p.role === "owner" || p.role === "admin");
+    return ["whitelist reload", ...ops.map((p) => `op ${p.name}`)];
+  }
+
+  // ---- join requests --------------------------------------------------------------------------
 
   isDenied(name: string): boolean {
     const row = this.db
@@ -86,16 +190,19 @@ export class AccessService {
     return { request, notify };
   }
 
-  pendingRequests(): JoinRequest[] {
-    return this.db.prepare("SELECT * FROM join_requests WHERE status = 'pending' ORDER BY last_seen DESC").all() as unknown as JoinRequest[];
+  pendingRequests(): (JoinRequest & { knownPlayer: boolean })[] {
+    const rows = this.db.prepare("SELECT * FROM join_requests WHERE status = 'pending' ORDER BY last_seen DESC").all() as unknown as JoinRequest[];
+    return rows.map((r) => ({ ...r, knownPlayer: Boolean(this.findApproved(r.name)) }));
   }
 
-  /** Approve a request: resolve the real account and add them. Owner-only (portal). */
-  async approve(requestId: number, role: Role = "player"): Promise<Player> {
+  /** Approve a request: add the player (if new) and give them the world they asked for. Owner-only. */
+  async approve(requestId: number): Promise<Player> {
     const req = this.db.prepare("SELECT * FROM join_requests WHERE id = ?").get(requestId) as unknown as JoinRequest | undefined;
     if (!req || req.status !== "pending") throw new Error("That request was already handled.");
-    const player = await this.addJavaPlayer(req.name, role);
+    const player = this.findApproved(req.name) ?? (await this.addJavaPlayer(req.name));
+    if (req.world_slug) this.addMember(req.world_slug, player.uuid);
     this.db.prepare("UPDATE join_requests SET status = 'approved', decided_at = ? WHERE id = ?").run(Date.now(), requestId);
+    audit(this.db, "join_approved", { requestId, name: player.name, worldSlug: req.world_slug });
     return player;
   }
 
@@ -105,44 +212,52 @@ export class AccessService {
     audit(this.db, "join_denied", { requestId });
   }
 
-  async addJavaPlayer(name: string, role: Role = "player"): Promise<Player> {
-    const profile = await lookupJavaProfile(name);
-    if (!profile) throw new Error(`No Minecraft: Java Edition account is named "${name}".`);
+  // ---- invite links ---------------------------------------------------------------------------
+
+  createInvite(opts: { worldSlug?: string; days: number; maxUses: number }): { token: string; invite: Invite } {
+    const token = randomBytes(18).toString("base64url");
     const now = Date.now();
     this.db
-      .prepare(
-        `INSERT INTO players (uuid, name, platform, role, approved_at) VALUES (?, ?, 'java', ?, ?)
-         ON CONFLICT(uuid) DO UPDATE SET name = excluded.name, role = CASE WHEN players.role = 'owner' THEN 'owner' ELSE excluded.role END`,
-      )
-      .run(profile.uuid, profile.name, role, now);
-    audit(this.db, "player_approved", { name: profile.name, uuid: profile.uuid, role });
-    return this.db.prepare("SELECT * FROM players WHERE uuid = ?").get(profile.uuid) as unknown as Player;
+      .prepare("INSERT INTO invites (token_hash, world_slug, created_at, expires_at, max_uses) VALUES (?, ?, ?, ?, ?)")
+      .run(sha256(token), opts.worldSlug ?? null, now, now + opts.days * 86_400_000, opts.maxUses);
+    const invite = this.db.prepare("SELECT * FROM invites WHERE token_hash = ?").get(sha256(token)) as unknown as Invite;
+    audit(this.db, "invite_created", { id: invite.id, worldSlug: opts.worldSlug, days: opts.days, maxUses: opts.maxUses });
+    return { token, invite };
   }
 
-  removePlayer(uuid: string): void {
-    const p = this.db.prepare("SELECT role, name FROM players WHERE uuid = ?").get(uuid) as { role: Role; name: string } | undefined;
-    if (!p) return;
-    if (p.role === "owner") throw new Error("The owner can't be removed.");
-    this.db.prepare("DELETE FROM players WHERE uuid = ?").run(uuid);
-    audit(this.db, "player_removed", { name: p.name, uuid });
+  invites(): Invite[] {
+    return this.db
+      .prepare("SELECT id, world_slug, created_at, expires_at, max_uses, uses, revoked FROM invites WHERE revoked = 0 AND expires_at > ? AND uses < max_uses ORDER BY id DESC")
+      .all(Date.now()) as unknown as Invite[];
   }
 
-  /** whitelist.json + ops.json for every world (Phase 1.2: all approved players may join all worlds). */
-  accessFiles(): WorldFile[] {
-    const players = this.players();
-    const whitelist = players.map((p) => ({ uuid: p.uuid, name: p.name }));
-    const ops = players
-      .filter((p) => p.role === "owner" || p.role === "admin")
-      .map((p) => ({ uuid: p.uuid, name: p.name, level: p.role === "owner" ? 4 : 3, bypassesPlayerLimit: true }));
-    return [
-      { kind: "inline", path: "whitelist.json", content: JSON.stringify(whitelist, null, 2), encoding: "utf8" },
-      { kind: "inline", path: "ops.json", content: JSON.stringify(ops, null, 2), encoding: "utf8" },
-    ];
+  revokeInvite(id: number): void {
+    this.db.prepare("UPDATE invites SET revoked = 1 WHERE id = ?").run(id);
+    audit(this.db, "invite_revoked", { id });
   }
 
-  /** Console commands that make a running server match the files (ops.json has no reload command). */
-  liveSyncCommands(): string[] {
-    const ops = this.players().filter((p) => p.role === "owner" || p.role === "admin");
-    return ["whitelist reload", ...ops.map((p) => `op ${p.name}`)];
+  /** A usable invite for this token, or undefined (unknown, used up, expired or revoked). */
+  checkInvite(token: string): Invite | undefined {
+    const inv = this.db.prepare("SELECT * FROM invites WHERE token_hash = ?").get(sha256(token)) as unknown as Invite | undefined;
+    if (!inv || inv.revoked || inv.expires_at < Date.now() || inv.uses >= inv.max_uses) return undefined;
+    return inv;
+  }
+
+  /** Redeem: the token is the owner's approval. Adds the player (and the invite's world). */
+  async redeemInvite(token: string, name: string): Promise<{ player: Player; invite: Invite }> {
+    const inv = this.checkInvite(token);
+    if (!inv) throw new Error("This invite link has expired or was already used. Ask for a new one.");
+    // Claim a use first, atomically, so two simultaneous redemptions can't exceed max_uses.
+    const claimed = this.db.prepare("UPDATE invites SET uses = uses + 1 WHERE id = ? AND uses < max_uses AND revoked = 0").run(inv.id);
+    if (claimed.changes !== 1) throw new Error("This invite link was just used up. Ask for a new one.");
+    try {
+      const player = this.findApproved(name) ?? (await this.addJavaPlayer(name));
+      if (inv.world_slug) this.addMember(inv.world_slug, player.uuid);
+      audit(this.db, "invite_redeemed", { id: inv.id, name: player.name, worldSlug: inv.world_slug });
+      return { player, invite: inv };
+    } catch (err) {
+      this.db.prepare("UPDATE invites SET uses = uses - 1 WHERE id = ?").run(inv.id); // give the use back
+      throw err;
+    }
   }
 }

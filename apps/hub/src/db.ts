@@ -97,6 +97,25 @@ export function openDb(dataDir: string): Db {
     );
     CREATE UNIQUE INDEX IF NOT EXISTS join_requests_open ON join_requests (lower(name)) WHERE status = 'pending';
 
+    -- Per-world guest list, used when a world's access_mode is 'picked'.
+    CREATE TABLE IF NOT EXISTS world_members (
+      world_slug   TEXT NOT NULL,
+      player_uuid  TEXT NOT NULL,
+      PRIMARY KEY (world_slug, player_uuid)
+    );
+
+    -- Invite links. The token itself is the owner's approval, so only its hash is stored.
+    CREATE TABLE IF NOT EXISTS invites (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      token_hash  TEXT NOT NULL UNIQUE,
+      world_slug  TEXT,
+      created_at  INTEGER NOT NULL,
+      expires_at  INTEGER NOT NULL,
+      max_uses    INTEGER NOT NULL,
+      uses        INTEGER NOT NULL DEFAULT 0,
+      revoked     INTEGER NOT NULL DEFAULT 0
+    );
+
     CREATE TABLE IF NOT EXISTS audit_log (
       id      INTEGER PRIMARY KEY AUTOINCREMENT,
       at      INTEGER NOT NULL,
@@ -104,7 +123,14 @@ export function openDb(dataDir: string): Db {
       detail  TEXT
     );
   `);
+  // Additive migrations for databases created by earlier versions.
+  addColumn(db, "worlds", "access_mode", "access_mode TEXT NOT NULL DEFAULT 'everyone' CHECK (access_mode IN ('everyone','picked'))");
   return db;
+}
+
+function addColumn(db: Db, table: string, column: string, ddl: string): void {
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
+  if (!cols.some((c) => c.name === column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${ddl}`);
 }
 
 export function audit(db: Db, event: string, detail: Record<string, unknown> = {}): void {

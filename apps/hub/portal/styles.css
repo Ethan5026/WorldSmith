@@ -100,3 +100,13 @@ button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 }
 .add input:focus-visible { outline: 3px solid var(--accent); outline-offset: 1px; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+.field { display: grid; gap: 4px; font-size: 0.85rem; color: var(--muted); flex: 1 1 9rem; }
+select {
+  min-height: 44px; font: inherit; color: var(--ink); background: var(--surface);
+  border: 1px solid var(--line); border-radius: 10px; padding: 0 10px;
+}
+.check { display: flex; align-items: center; gap: 8px; min-height: 36px; }
+.check input { width: 20px; height: 20px; accent-color: var(--accent); }
+.access { border-top: 1px solid var(--line); padding-top: 10px; }
+.picks { gap: 4px 16px; }

@@ -48,6 +48,31 @@
       <p class="muted small">Or just give friends the server address: when they try to join, you'll get a notification to approve them.</p>
     </section>
 
+    <section aria-labelledby="h-invite">
+      <h2 id="h-invite">Invite friends</h2>
+      <form id="invite-form" class="card stack">
+        <div class="row">
+          <label class="field">World
+            <select id="invite-world"><option value="">Any world they're allowed on</option></select>
+          </label>
+          <label class="field">Expires in
+            <select id="invite-days"><option value="1">1 day</option><option value="7" selected>7 days</option><option value="30">30 days</option></select>
+          </label>
+          <label class="field">Uses
+            <select id="invite-uses"><option value="1" selected>1 person</option><option value="5">5 people</option><option value="20">20 people</option></select>
+          </label>
+        </div>
+        <button type="submit" class="primary">Create invite link</button>
+        <div id="invite-result" class="stack" hidden></div>
+      </form>
+      <div id="invite-list" class="stack"></div>
+      <form id="address-form" class="row add">
+        <label class="sr-only" for="java-address">Server address friends use</label>
+        <input id="java-address" placeholder="Server address friends use (from playit)" maxlength="120" autocapitalize="off" spellcheck="false">
+        <button type="submit">Save address</button>
+      </form>
+    </section>
+
     <section aria-labelledby="h-claude">
       <h2 id="h-claude">Claude connector</h2>
       <div id="active-list" class="stack"></div>

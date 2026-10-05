@@ -75,10 +75,15 @@ export class WorldService {
     if (!recipe) throw new Error(`No recipe called "${recipeId}". Available: ${[...this.recipes.keys()].join(", ")}`);
     if (this.row(slug)) throw new Error(`A world called "${slug}" already exists.`);
     const spec = instantiateRecipe(recipe, { slug, name });
-    await this.worker.apply(spec, randomBytes(24).toString("base64url"), this.access.accessFiles());
     this.db
       .prepare("INSERT INTO worlds (slug, name, recipe, spec, created_at) VALUES (?, ?, ?, ?, ?)")
       .run(slug, name, recipeId, JSON.stringify(spec), Date.now());
+    try {
+      await this.worker.apply(spec, randomBytes(24).toString("base64url"), this.access.accessFiles(slug));
+    } catch (err) {
+      this.db.prepare("DELETE FROM worlds WHERE slug = ?").run(slug);
+      throw err;
+    }
     if (!this.featuredSlug()) this.setFeatured(slug);
     audit(this.db, "world_created", { slug, recipe: recipeId });
     return this.view(slug);
@@ -102,7 +107,7 @@ export class WorldService {
     const spec = this.spec(slug);
     const s = await this.worker.status(slug);
     if (s.container === "running") throw new Error(`${spec.name} is running. Stop it first.`);
-    await this.worker.apply(spec, randomBytes(24).toString("base64url"), this.access.accessFiles());
+    await this.worker.apply(spec, randomBytes(24).toString("base64url"), this.access.accessFiles(slug));
     this.statusCache.delete(slug);
     audit(this.db, "world_reapplied", { slug });
     return this.view(slug, true);
@@ -177,13 +182,20 @@ export class WorldService {
 
   /** Push the current whitelist/ops to a world (files always; live reload if it's running). */
   async syncAccess(slug: string): Promise<void> {
-    await this.worker.putFiles(slug, this.access.accessFiles());
+    await this.worker.putFiles(slug, this.access.accessFiles(slug));
     const s = await this.worker.status(slug);
-    if (s.container === "running" && s.mc?.online) await this.worker.rcon(slug, this.access.liveSyncCommands());
+    if (s.container === "running" && s.mc?.online) await this.worker.rcon(slug, this.access.liveSyncCommands(slug));
   }
 
   async syncAccessEverywhere(): Promise<void> {
     await Promise.all(this.rows().map((r) => this.syncAccess(r.slug).catch((e) => console.error("sync failed", r.slug, e))));
+  }
+
+  /** Names of players currently in a running world (via the console's "list"). */
+  async onlinePlayers(slug: string): Promise<string[]> {
+    const [out] = await this.worker.rcon(slug, ["list"]);
+    const names = (out ?? "").split(":").slice(1).join(":").trim();
+    return names ? names.split(",").map((n) => n.trim()).filter(Boolean) : [];
   }
 
   /** Put worlds nobody has played for their idle limit to sleep. Called every minute. */

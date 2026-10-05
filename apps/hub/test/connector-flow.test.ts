@@ -29,6 +29,7 @@ const { createPrivateApp } = await import("../src/private-app.ts");
 const { WorkerClient } = await import("../src/worker-client.ts");
 const { AccessService } = await import("../src/access.ts");
 const { WorldService } = await import("../src/worlds.ts");
+const { Settings } = await import("../src/settings.ts");
 
 const CALLBACK = "https://claude.ai/api/mcp/auth_callback";
 const RESOURCE = "https://worldsmith.example.ts.net/mcp";
@@ -57,8 +58,10 @@ before(async () => {
     });
   // No worlds exist in this test, so the worker is never called.
   const worker = new WorkerClient(new URL("http://127.0.0.1:1"), "x".repeat(32));
-  const access = new AccessService(db);
-  const services = { worker, access, push, worlds: new WorldService(db, worker, access, config.recipesDir) };
+  const access = new AccessService(db, async (name) =>
+    name.toLowerCase() === "sam" ? { uuid: "11111111-1111-1111-1111-111111111111", name: "Sam" } : null,
+  );
+  const services = { worker, access, push, settings: new Settings(db), worlds: new WorldService(db, worker, access, config.recipesDir) };
   pub = await listen(createPublicApp(config, oauth, services));
   priv = await listen(createPrivateApp(config, db, oauth, services));
 });
@@ -252,4 +255,35 @@ test("declined requests send Claude an access_denied error", async () => {
   await fetch(`${priv}/api/connections/${mine.id}/deny`, { method: "POST", headers: { ...OWNER, "X-WorldSmith": "1" } });
   const done = await fetch(`${pub}/connect/complete?id=${id}`, { redirect: "manual" });
   assert.equal(new URL(done.headers.get("location")!).searchParams.get("error"), "access_denied");
+});
+
+test("invite link: friend opens it, enters their name, gets the address; link then expires", async () => {
+  // Owner sets the public address and creates a one-time invite in the portal.
+  const OWNER_POST = { ...OWNER, "X-WorldSmith": "1", "Content-Type": "application/json" };
+  await fetch(`${priv}/api/settings`, { method: "PUT", headers: OWNER_POST, body: JSON.stringify({ java_address: "lucky-cat.joinmc.link" }) });
+  const created = await json(fetch(`${priv}/api/invites`, { method: "POST", headers: OWNER_POST, body: JSON.stringify({ days: 3, maxUses: 1 }) }));
+  const url = new URL(created.url);
+  assert.equal(url.origin, "https://worldsmith.example.ts.net", "invite URLs use the public (Funnel) address");
+  const invitePath = url.pathname;
+
+  const pageRes = await fetch(`${pub}${invitePath}`);
+  assert.equal(pageRes.status, 200);
+  assert.match(pageRes.headers.get("content-security-policy") ?? "", /default-src 'none'/);
+  assert.match(await pageRes.text(), /Minecraft: Java Edition username/);
+
+  const bad = await fetch(`${pub}${invitePath}`, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: "name=No%20Spaces" });
+  assert.equal(bad.status, 400);
+
+  const ok = await fetch(`${pub}${invitePath}`, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: "name=Sam" });
+  assert.equal(ok.status, 200);
+  const okHtml = await ok.text();
+  assert.match(okHtml, /You're in, Sam!/);
+  assert.match(okHtml, /lucky-cat.joinmc.link/);
+
+  const players = await json(fetch(`${priv}/api/players`, { headers: OWNER }));
+  assert.ok(players.some((p: { name: string }) => p.name === "Sam"));
+
+  assert.equal((await fetch(`${pub}${invitePath}`)).status, 410, "used up");
+  assert.equal((await fetch(`${pub}/invite/made-up-token`)).status, 410);
+  assert.equal((await fetch(`${priv}/api/invites`, { headers: { "Tailscale-User-Login": "x@y.z" } })).status, 403, "only the owner makes invites");
 });

@@ -103,6 +103,38 @@ export class GateService {
       );
     }
 
+    if (!this.access.canJoin(player, slug)) {
+      // A friend, but this world has a guest list they're not on: ask the owner for this world.
+      const { request, notify } = this.access.recordAttempt(player.name, input.claimedUuid, slug);
+      if (notify) {
+        void this.push.notify({
+          title: `${player.name} wants to join ${w.name}`,
+          body: `${w.name} is invite-only and they're not on its list. Tap to let them in.`,
+          url: "/#requests",
+          tag: `join-${request.id}`,
+        });
+      }
+      return kick(
+        lines(
+          { text: `You're not on the list for ${w.name} yet.\n\n`, color: "yellow", bold: true },
+          { text: `${this.ownerName} has been asked to add you.`, color: "white" },
+        ),
+      );
+    }
+
+    if (player.role !== "owner" && this.access.worldAccess(slug).onlyWithMe) {
+      const ownerName = this.access.owner()?.name;
+      const online = w.state === "online" ? await this.worlds.onlinePlayers(slug).catch(() => [] as string[]) : [];
+      if (!ownerName || !online.some((n) => n.toLowerCase() === ownerName.toLowerCase())) {
+        return kick(
+          lines(
+            { text: `${w.name} is only open when ${this.ownerName} is playing.\n\n`, color: "yellow", bold: true },
+            { text: "Try again when they're on.", color: "white" },
+          ),
+        );
+      }
+    }
+
     if (w.state === "online") {
       this.notifyPlaying(player.name, player.role, w.name, slug);
       audit(this.db, "gate_pipe", { name: player.name, slug });

@@ -15,6 +15,7 @@ import { SCOPE, type OwnerApprovalOAuth } from "./oauth.ts";
 import { createMcpServer } from "./mcp.ts";
 import { audit } from "./db.ts";
 import type { HubServices } from "./services.ts";
+import { mountInvitePages } from "./invite-pages.ts";
 
 export function createPublicApp(config: Config, oauth: OwnerApprovalOAuth, services: HubServices): express.Express {
   const app = express();
@@ -90,6 +91,8 @@ export function createPublicApp(config: Config, oauth: OwnerApprovalOAuth, servi
   };
   app.get("/mcp", bearer, methodNotAllowed);
   app.delete("/mcp", bearer, methodNotAllowed);
+
+  mountInvitePages(app, services, config.ownerName);
 
   app.get("/", (_req, res) => void res.type("text").send("WorldSmith"));
   app.use((_req, res) => void res.status(404).type("text").send("Not found"));

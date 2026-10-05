@@ -104,6 +104,63 @@ export function createPrivateApp(config: Config, db: Db, oauth: OwnerApprovalOAu
     }),
   );
 
+  app.get(
+    "/api/worlds/:slug/access",
+    handle((req) => {
+      const slug = Slug.parse(req.params.slug);
+      worlds.spec(slug);
+      return access.worldAccess(slug);
+    }),
+  );
+  app.put(
+    "/api/worlds/:slug/access",
+    csrf,
+    handle(async (req) => {
+      const slug = Slug.parse(req.params.slug);
+      worlds.spec(slug);
+      const change = z
+        .object({ mode: z.enum(["everyone", "picked"]).optional(), onlyWithMe: z.boolean().optional(), members: z.array(z.uuid()).max(500).optional() })
+        .parse(req.body);
+      access.setWorldAccess(slug, change);
+      await worlds.syncAccess(slug);
+      return access.worldAccess(slug);
+    }),
+  );
+
+  // ---- invites ----
+  app.get("/api/invites", handle(() => access.invites()));
+  app.post(
+    "/api/invites",
+    csrf,
+    handle((req) => {
+      const body = z
+        .object({ world: Slug.optional(), days: z.number().int().min(1).max(30).default(7), maxUses: z.number().int().min(1).max(20).default(1) })
+        .parse(req.body ?? {});
+      if (body.world) worlds.spec(body.world);
+      const { token, invite } = access.createInvite({ worldSlug: body.world, days: body.days, maxUses: body.maxUses });
+      return { url: new URL(`/invite/${token}`, config.publicBaseUrl).href, invite };
+    }),
+  );
+  app.delete(
+    "/api/invites/:id",
+    csrf,
+    handle((req) => access.revokeInvite(z.coerce.number().int().parse(req.params.id))),
+  );
+
+  // ---- settings ----
+  app.get("/api/settings", handle(() => services.settings.all()));
+  app.put(
+    "/api/settings",
+    csrf,
+    handle((req) => {
+      const body = z
+        .object({ java_address: z.string().max(120).nullable().optional(), bedrock_address: z.string().max(120).nullable().optional() })
+        .parse(req.body);
+      for (const [k, v] of Object.entries(body)) services.settings.set(k as "java_address" | "bedrock_address", v ?? null);
+      return services.settings.all();
+    }),
+  );
+
   // ---- friends ----
   app.get("/api/requests", handle(() => access.pendingRequests()));
   app.post(
