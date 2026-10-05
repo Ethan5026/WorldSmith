@@ -14,6 +14,9 @@ check() { # name expected actual
 }
 code() { curl -s -o /dev/null -w "%{http_code}" --max-time 15 "$@" 2>/dev/null; }
 
+# Wait (up to 60 s) for the hub to answer, so a just-restarted hub isn't reported as a failure.
+for _ in $(seq 1 30); do [ "$(code "$B/.well-known/oauth-authorization-server")" = 200 ] && break; sleep 2; done
+
 echo "Public listener (Funnel :443)"
 check "OAuth metadata is served"                        200 "$(code "$B/.well-known/oauth-authorization-server")"
 check "MCP without a token is refused"                  401 "$(code -X POST "$B/mcp")"
