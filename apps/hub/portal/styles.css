@@ -112,3 +112,8 @@ select {
 .picks { gap: 4px 16px; }
 .backups { border-top: 1px solid var(--line); padding-top: 10px; }
 .backup { padding: 6px 0; }
+.declined summary { display: flex; align-items: center; gap: 10px; cursor: pointer; list-style: none; min-height: 44px; }
+.declined summary::-webkit-details-marker { display: none; }
+.declined summary h2::after { content: " ▸"; color: var(--muted); }
+.declined[open] summary h2::after { content: " ▾"; }
+.declined { display: grid; gap: 10px; }

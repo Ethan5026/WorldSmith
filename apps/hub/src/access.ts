@@ -42,6 +42,9 @@ export interface Invite {
 }
 
 const NOTIFY_EVERY_MS = 10 * 60 * 1000;
+/** Floodgate UUIDs are new UUID(0, xuid); anything else on a Bedrock request is unverified. */
+const floodgateShaped = (uuid: string | null): string | undefined =>
+  uuid && /^00000000-0000-0000-[0-9a-f]{4}-[0-9a-f]{12}$/.test(uuid) ? uuid : undefined;
 const sha256 = (s: string): string => createHash("sha256").update(s).digest("hex");
 
 export type ProfileLookup = (name: string) => Promise<{ uuid: string; name: string } | null>;
@@ -192,11 +195,49 @@ export class AccessService {
 
   // ---- join requests --------------------------------------------------------------------------
 
-  isDenied(name: string): boolean {
+  /** Declines are per edition: a Java "Sam" and a Bedrock "Sam" are different people. */
+  isDenied(name: string, platform: Platform = "java"): boolean {
     const row = this.db
-      .prepare("SELECT status FROM join_requests WHERE lower(name) = lower(?) ORDER BY id DESC LIMIT 1")
-      .get(name) as { status: string } | undefined;
+      .prepare("SELECT status FROM join_requests WHERE lower(name) = lower(?) AND platform = ? ORDER BY id DESC LIMIT 1")
+      .get(name, platform) as { status: string } | undefined;
     return row?.status === "denied";
+  }
+
+  /** A declined person tried again: count it on their declined request, without notifying anyone. */
+  recordDeclinedAttempt(name: string, claimedUuid: string | undefined, platform: Platform): void {
+    this.db
+      .prepare(
+        `UPDATE join_requests SET attempts = attempts + 1, last_seen = ?, claimed_uuid = coalesce(?, claimed_uuid)
+         WHERE id = (SELECT max(id) FROM join_requests WHERE lower(name) = lower(?) AND platform = ? AND status = 'denied')`,
+      )
+      .run(Date.now(), claimedUuid ?? null, name, platform);
+  }
+
+  /** Everyone currently declined (latest decision per name + edition), most recent attempt first. */
+  declinedRequests(): JoinRequest[] {
+    return this.db
+      .prepare(
+        `SELECT * FROM join_requests jr WHERE status = 'denied'
+           AND id = (SELECT max(id) FROM join_requests WHERE lower(name) = lower(jr.name) AND platform = jr.platform)
+         ORDER BY last_seen DESC`,
+      )
+      .all() as unknown as JoinRequest[];
+  }
+
+  /** Undo a decline: the request goes back to pending so it can be approved. Owner-only. */
+  reopen(requestId: number): void {
+    const r = this.db.prepare("UPDATE join_requests SET status = 'pending', decided_at = NULL WHERE id = ? AND status = 'denied'").run(requestId);
+    if (r.changes !== 1) throw new Error("Only declined requests can be reopened.");
+    audit(this.db, "join_reopened", { requestId });
+  }
+
+  setRole(uuid: string, role: "admin" | "player"): Player {
+    const p = this.player(uuid);
+    if (!p) throw new Error("No such friend.");
+    if (p.role === "owner") throw new Error("The owner's role can't be changed.");
+    this.db.prepare("UPDATE players SET role = ? WHERE uuid = ?").run(role, uuid);
+    audit(this.db, "player_role_changed", { name: p.name, uuid, role });
+    return this.player(uuid)!;
   }
 
   /** Record an attempt. Returns the request and whether the owner should be notified now. */
@@ -234,14 +275,17 @@ export class AccessService {
   }
 
   /** Approve a request: add the player (if new) and give them the world they asked for. Owner-only. */
-  async approve(requestId: number): Promise<Player> {
+  async approve(requestId: number, role: "admin" | "player" = "player"): Promise<Player> {
     const req = this.db.prepare("SELECT * FROM join_requests WHERE id = ?").get(requestId) as unknown as JoinRequest | undefined;
     if (!req || req.status !== "pending") throw new Error("That request was already handled.");
     const platform = req.platform as Platform;
     // Bedrock requests carry the Floodgate UUID verified from Geyser's encrypted login data.
     const player =
       this.findApproved(req.name, platform === "bedrock" ? (req.claimed_uuid ?? undefined) : undefined, platform) ??
-      (platform === "bedrock" ? await this.addBedrockPlayer(req.name, "player", req.claimed_uuid ?? undefined) : await this.addJavaPlayer(req.name));
+      (platform === "bedrock"
+        ? await this.addBedrockPlayer(req.name, role, floodgateShaped(req.claimed_uuid))
+        : await this.addJavaPlayer(req.name, role));
+    if (role === "admin" && player.role === "player") this.setRole(player.uuid, "admin");
     if (req.world_slug) this.addMember(req.world_slug, player.uuid);
     this.db.prepare("UPDATE join_requests SET status = 'approved', decided_at = ? WHERE id = ?").run(Date.now(), requestId);
     audit(this.db, "join_approved", { requestId, name: player.name, worldSlug: req.world_slug });

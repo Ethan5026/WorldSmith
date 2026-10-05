@@ -69,9 +69,51 @@ async function loadRequests() {
             toast(`${r.name} can join now. Tell them to try again.`);
             refresh();
           }),
+          button("Make operator", "", async () => {
+            await post(`/api/requests/${r.id}/approve`, { role: "admin" });
+            toast(`${r.name} can join now, as an operator.`);
+            refresh();
+          }),
           button("Decline", "danger", async () => {
             await post(`/api/requests/${r.id}/deny`);
             toast(`Declined ${r.name}.`);
+            refresh();
+          }),
+        ),
+      ),
+    ),
+  );
+}
+
+// ---- declined bucket ------------------------------------------------------------------------
+async function loadDeclined() {
+  const list = await api("/api/requests/declined");
+  $("declined").hidden = list.length === 0;
+  $("declined-count").textContent = String(list.length);
+  $("declined-list").replaceChildren(
+    ...list.map((r) =>
+      el(
+        "div",
+        { class: "card stack" },
+        el(
+          "p",
+          {},
+          el("span", { class: "who" }, r.name),
+          r.platform === "bedrock" ? el("span", { class: "pill" }, "Bedrock") : null,
+          ` · tried ${r.attempts} time${r.attempts === 1 ? "" : "s"} · last ${ago(r.last_seen)}`,
+        ),
+        el(
+          "div",
+          { class: "row" },
+          button("Undo decline", "", async () => {
+            await post(`/api/requests/${r.id}/reopen`);
+            toast(`${r.name} is back in "Wants to join".`);
+            refresh();
+          }),
+          button("Let them in", "primary", async () => {
+            await post(`/api/requests/${r.id}/reopen`);
+            await post(`/api/requests/${r.id}/approve`);
+            toast(`${r.name} can join now. Tell them to try again.`);
             refresh();
           }),
         ),
@@ -302,6 +344,13 @@ async function loadPlayers() {
         el("span", {}, el("span", { class: "who" }, p.name), el("span", { class: "muted small" }, ` · ${p.role === "owner" ? "you" : p.role}${p.platform === "bedrock" ? " · Bedrock" : ""}`)),
         p.role === "owner"
           ? null
+          : button(p.role === "admin" ? "Remove operator" : "Make operator", "", async () => {
+              await api(`/api/players/${p.uuid}/role`, { method: "PUT", body: JSON.stringify({ role: p.role === "admin" ? "player" : "admin" }) });
+              toast(p.role === "admin" ? `${p.name} is no longer an operator.` : `${p.name} is now an operator.`);
+              refresh();
+            }),
+        p.role === "owner"
+          ? null
           : button("Remove", "danger", async () => {
               await api(`/api/players/${p.uuid}`, { method: "DELETE" });
               toast(`${p.name} can no longer join.`);
@@ -406,7 +455,7 @@ async function enableNotifications(me) {
 async function refresh() {
   try {
     await loadPlayers(); // world access controls need the friends list
-    await Promise.all([loadRequests(), loadWorlds(), loadConnections()]);
+    await Promise.all([loadRequests(), loadDeclined(), loadWorlds(), loadConnections()]);
     await loadInvites((await api("/api/worlds")).worlds);
   } catch (e) {
     toast(e.message);

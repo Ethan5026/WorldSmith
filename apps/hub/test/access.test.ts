@@ -156,3 +156,32 @@ test("a verified Bedrock request (Floodgate UUID from the login) is approved wit
   assert.ok(bedrock.findApproved("anything", verified, "bedrock"), "matched by verified UUID, not name");
   assert.equal(bedrock.findApproved("Ethan5026", undefined, "java")?.role, "owner", "the Java owner account is untouched");
 });
+
+test("declines: per edition, repeat attempts go to the quiet declined bucket, and can be undone", async () => {
+  const { request } = access.recordAttempt("Griefer", undefined, "oneblock", "java");
+  access.deny(request.id);
+  assert.ok(access.isDenied("Griefer", "java"));
+  assert.ok(!access.isDenied("Griefer", "bedrock"), "a Bedrock Griefer is someone else");
+
+  access.recordDeclinedAttempt("Griefer", undefined, "java");
+  access.recordDeclinedAttempt("griefer", undefined, "java");
+  const declined = access.declinedRequests();
+  assert.equal(declined.length, 1);
+  assert.equal(declined[0]!.attempts, 3, "original attempt + 2 quiet retries");
+  assert.equal(access.pendingRequests().length, 0, "retries never re-enter the pending list");
+
+  access.reopen(declined[0]!.id);
+  assert.equal(access.declinedRequests().length, 0);
+  assert.equal(access.pendingRequests()[0]?.name, "Griefer");
+  assert.throws(() => access.reopen(declined[0]!.id), /Only declined/);
+});
+
+test("approve as operator; owner role can't be changed", async () => {
+  const { request } = access.recordAttempt("Alex", undefined, "oneblock", "java");
+  const p = await access.approve(request.id, "admin");
+  assert.equal(p.role, "admin");
+  const ops = access.accessFiles("oneblock").find((f) => f.path === "ops.json");
+  assert.ok(ops && ops.kind === "inline" && ops.content.includes('"Alex"'));
+  assert.equal(access.setRole(p.uuid, "player").role, "player");
+  assert.throws(() => access.setRole(PROFILES.ethan5026!, "player"), /owner/);
+});

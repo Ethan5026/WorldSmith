@@ -179,14 +179,17 @@ export function createPrivateApp(config: Config, db: Db, oauth: OwnerApprovalOAu
 
   // ---- friends ----
   app.get("/api/requests", handle(() => access.pendingRequests()));
+  app.get("/api/requests/declined", handle(() => access.declinedRequests()));
   app.post(
     "/api/requests/:id/:decision",
     csrf,
     handle(async (req) => {
       const id = z.coerce.number().int().parse(req.params.id);
-      const decision = z.enum(["approve", "deny"]).parse(req.params.decision);
+      const decision = z.enum(["approve", "deny", "reopen"]).parse(req.params.decision);
       if (decision === "deny") return access.deny(id);
-      const player = await access.approve(id);
+      if (decision === "reopen") return access.reopen(id);
+      const { role } = z.object({ role: z.enum(["admin", "player"]).default("player") }).parse(req.body ?? {});
+      const player = await access.approve(id, role);
       await worlds.syncAccessEverywhere();
       return player;
     }),
@@ -200,6 +203,16 @@ export function createPrivateApp(config: Config, db: Db, oauth: OwnerApprovalOAu
         .object({ name: z.string().min(3).max(16), role: z.enum(["admin", "player"]).default("player"), platform: z.enum(["java", "bedrock"]).default("java") })
         .parse(req.body);
       const player = platform === "bedrock" ? await access.addBedrockPlayer(name, role) : await access.addJavaPlayer(name, role);
+      await worlds.syncAccessEverywhere();
+      return player;
+    }),
+  );
+  app.put(
+    "/api/players/:uuid/role",
+    csrf,
+    handle(async (req) => {
+      const { role } = z.object({ role: z.enum(["admin", "player"]) }).parse(req.body);
+      const player = access.setRole(z.uuid().parse(req.params.uuid), role);
       await worlds.syncAccessEverywhere();
       return player;
     }),

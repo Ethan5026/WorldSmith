@@ -115,7 +115,11 @@ export class GateService {
 
     const player = this.access.findApproved(input.username, input.claimedUuid, platform);
     if (!player) {
-      if (this.access.isDenied(input.username)) return kick({ text: "You don't have access to this server.", color: "red" });
+      if (this.access.isDenied(input.username, platform)) {
+        // Declined people go to the quiet "Declined" bucket: counted, no notification.
+        this.access.recordDeclinedAttempt(input.username, input.claimedUuid, platform);
+        return kick({ text: "You don't have access to this server.", color: "red" });
+      }
       const { request, notify } = this.access.recordAttempt(input.username, input.claimedUuid, slug, platform);
       if (notify) {
         void this.push.notify({
