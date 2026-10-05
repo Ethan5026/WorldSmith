@@ -21,30 +21,37 @@
   </header>
 
   <main>
+    <section id="requests" aria-labelledby="h-requests" hidden>
+      <h2 id="h-requests">Wants to join</h2>
+      <div id="request-list" class="stack"></div>
+    </section>
+
     <section id="connections" aria-labelledby="h-connections" hidden>
       <h2 id="h-connections">Claude wants to connect</h2>
       <div id="pending-list" class="stack"></div>
     </section>
 
-    <section aria-labelledby="h-world">
-      <div class="section-head">
-        <h2 id="h-world">Featured world</h2>
-        <span id="world-pill" class="pill">checking…</span>
-      </div>
-      <div class="card">
-        <p id="world-motd" class="world-motd">…</p>
-        <dl class="facts">
-          <div><dt>Version</dt><dd id="world-version">–</dd></div>
-          <div><dt>Players</dt><dd id="world-players">–</dd></div>
-          <div><dt>Ping</dt><dd id="world-latency">–</dd></div>
-        </dl>
-      </div>
+    <section aria-labelledby="h-worlds">
+      <h2 id="h-worlds">Worlds</h2>
+      <div id="world-list" class="stack"><p class="muted small">Loading…</p></div>
+      <p id="address-note" class="muted small"></p>
+    </section>
+
+    <section aria-labelledby="h-friends">
+      <h2 id="h-friends">Friends</h2>
+      <div id="player-list" class="stack"></div>
+      <form id="add-player" class="row add">
+        <label class="sr-only" for="add-name">Minecraft username</label>
+        <input id="add-name" name="name" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Minecraft username" minlength="3" maxlength="16" pattern="[A-Za-z0-9_]{3,16}" required>
+        <button type="submit" class="primary">Add friend</button>
+      </form>
+      <p class="muted small">Or just give friends the server address: when they try to join, you'll get a notification to approve them.</p>
     </section>
 
     <section aria-labelledby="h-claude">
       <h2 id="h-claude">Claude connector</h2>
       <div id="active-list" class="stack"></div>
-      <p class="muted small">Add the connector in claude.ai → Customize → Connectors using the address below. Every new connection must be approved here.</p>
+      <p class="muted small">In claude.ai → Customize → Connectors, add this address. Every new connection must be approved here.</p>
       <code id="mcp-url" class="url"></code>
     </section>
 
