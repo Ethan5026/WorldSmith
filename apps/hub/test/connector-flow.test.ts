@@ -30,6 +30,7 @@ const { WorkerClient } = await import("../src/worker-client.ts");
 const { AccessService } = await import("../src/access.ts");
 const { WorldService } = await import("../src/worlds.ts");
 const { Settings } = await import("../src/settings.ts");
+const { BuildService } = await import("../src/builds.ts");
 
 const CALLBACK = "https://claude.ai/api/mcp/auth_callback";
 const RESOURCE = "https://worldsmith.example.ts.net/mcp";
@@ -61,7 +62,8 @@ before(async () => {
   const access = new AccessService(db, async (name) =>
     name.toLowerCase() === "sam" ? { uuid: "11111111-1111-1111-1111-111111111111", name: "Sam" } : null,
   );
-  const services = { worker, access, push, settings: new Settings(db), worlds: new WorldService(db, worker, access, config.recipesDir) };
+  const worldsSvc = new WorldService(db, worker, access, config.recipesDir);
+  const services = { worker, access, push, settings: new Settings(db), worlds: worldsSvc, builds: new BuildService(worldsSvc) };
   pub = await listen(createPublicApp(config, oauth, services));
   priv = await listen(createPrivateApp(config, db, oauth, services));
 });

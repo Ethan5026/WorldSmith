@@ -51,7 +51,7 @@ export function createPrivateApp(config: Config, db: Db, oauth: OwnerApprovalOAu
         res.status(err instanceof z.ZodError ? 400 : 409).json({ error: message });
       }
     };
-  app.use("/api", express.json({ limit: "64kb" }));
+  app.use("/api", express.json({ limit: "512kb" }));
 
   app.get("/api/me", (_req, res) => {
     res.json({ name: res.locals.ownerName, pushSubscriptions: push.count(), vapidPublicKey: push.publicKey });
@@ -127,6 +127,16 @@ export function createPrivateApp(config: Config, db: Db, oauth: OwnerApprovalOAu
       access.setWorldAccess(slug, change);
       await worlds.syncAccess(slug);
       return access.worldAccess(slug);
+    }),
+  );
+
+  // ---- builds (owner; Claude uses the MCP "build" tool) ----
+  app.post(
+    "/api/worlds/:slug/build",
+    csrf,
+    handle(async (req) => {
+      const body = z.object({ script: z.unknown(), allowRestart: z.boolean().default(false) }).parse(req.body);
+      return services.builds.run(Slug.parse(req.params.slug), body.script, { allowRestart: body.allowRestart, by: "owner (portal)" });
     }),
   );
 

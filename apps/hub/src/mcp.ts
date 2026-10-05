@@ -11,6 +11,7 @@ import type { Config } from "./config.ts";
 import type { HubServices } from "./services.ts";
 import { audit } from "./db.ts";
 import { checkBlockState, checkGamerule, LEGACY_GAMERULES, loadVersion, type McVersionData } from "@worldsmith/mcdata";
+import { BuildScript } from "@worldsmith/core";
 
 /**
  * Check and normalize one console command against the world's exact Minecraft version.
@@ -166,6 +167,50 @@ export function createMcpServer(config: Config, services: HubServices, clientId?
           output: (outputs[i] ?? "").replace(/§./g, ""),
         })),
       );
+    },
+  );
+
+  server.registerTool(
+    "build",
+    {
+      title: "Build in a world",
+      description:
+        "Set up an area: floors/walls/rooms (fill, mode hollow for rooms), single blocks (set), chests with items or a " +
+        "loot table, signs (up to 4 lines, plain or {text,color,bold}), command blocks (impulse/repeating/chain), " +
+        "teleport pads (pressure plate + hidden command block), vanilla structures (place structure, e.g. " +
+        "minecraft:village_plains), features (e.g. minecraft:oak), entities (summon), the world spawn, game rules, " +
+        "or any other console command. Coordinates are relative to 'origin' (use player_position to build where " +
+        "someone stands; y is the block they stand in). Everything is validated against the world's exact Minecraft " +
+        "version before anything runs, a backup is taken first (the owner can restore it to undo), and the report " +
+        "says what changed and what failed. If command blocks are needed and are off, the world restarts to enable " +
+        "them; that's refused while players are online unless allowRestart is true (ask first).",
+      inputSchema: {
+        slug: slugArg,
+        script: BuildScript,
+        allowRestart: z.boolean().default(false),
+      },
+    },
+    async ({ slug, script, allowRestart }) => {
+      const report = await services.builds.run(resolve(slug), script, { allowRestart, by: `Claude (${clientId ?? "connector"})` });
+      return { ...json(report), isError: !report.ok };
+    },
+  );
+
+  server.registerTool(
+    "player_position",
+    {
+      title: "Where is a player?",
+      description: "Block position and dimension of an online player (Bedrock players have a '.' prefix, e.g. .Ethan5026). Use it as a build origin.",
+      inputSchema: { slug: slugArg, player: z.string().regex(/^\.?[A-Za-z0-9_]{1,16}$/) },
+      annotations: { readOnlyHint: true },
+    },
+    async ({ slug, player }) => {
+      const s = resolve(slug);
+      const [pos, dim] = await services.worker.rcon(s, [`data get entity ${player} Pos`, `data get entity ${player} Dimension`]);
+      const nums = /\[(-?[\d.]+)d?, (-?[\d.]+)d?, (-?[\d.]+)d?\]/.exec(pos ?? "");
+      if (!nums) return { isError: true, content: [{ type: "text" as const, text: `${player} isn't online in this world. (${(pos ?? "").slice(0, 120)})` }] };
+      const block = [Math.floor(Number(nums[1])), Math.floor(Number(nums[2])), Math.floor(Number(nums[3]))];
+      return json({ player, block, dimension: /"([^"]+)"/.exec(dim ?? "")?.[1] ?? "unknown" });
     },
   );
 
