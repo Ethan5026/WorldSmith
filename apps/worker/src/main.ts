@@ -7,6 +7,7 @@ if (token.length < 32) throw new Error("WORKER_TOKEN must be set (32+ chars) —
 const runtime = new WorldRuntime({
   network: process.env.WORLDS_NETWORK ?? "worldsmith_worlds",
   cacheDir: process.env.CACHE_DIR ?? "/cache",
+  backupsDir: process.env.BACKUPS_DIR ?? "/backups",
 });
 
 const port = Number(process.env.PORT ?? 7070);

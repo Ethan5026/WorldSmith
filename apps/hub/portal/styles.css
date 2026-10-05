@@ -110,3 +110,5 @@ select {
 .check input { width: 20px; height: 20px; accent-color: var(--accent); }
 .access { border-top: 1px solid var(--line); padding-top: 10px; }
 .picks { gap: 4px 16px; }
+.backups { border-top: 1px solid var(--line); padding-top: 10px; }
+.backup { padding: 6px 0; }

@@ -118,6 +118,7 @@ services:
       # Root-equivalent: the worker's API is token-protected and published nowhere.
       - /var/run/docker.sock:/var/run/docker.sock
       - worker-cache:/cache
+      - worker-backups:/backups # world backups (copy off this machine later: mini PC / USB / cloud)
     networks: [default, worlds]
     security_opt: ["no-new-privileges:true"]
     restart: unless-stopped
@@ -131,4 +132,5 @@ volumes:
   ts-state:
   hub-data:
   worker-cache:
+  worker-backups:
   hub-ipc:

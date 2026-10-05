@@ -124,6 +124,7 @@ export function openDb(dataDir: string): Db {
     );
   `);
   // Additive migrations for databases created by earlier versions.
+  addColumn(db, "worlds", "last_backup_at", "last_backup_at INTEGER");
   addColumn(db, "worlds", "access_mode", "access_mode TEXT NOT NULL DEFAULT 'everyone' CHECK (access_mode IN ('everyone','picked'))");
   return db;
 }

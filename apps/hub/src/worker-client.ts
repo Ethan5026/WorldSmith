@@ -11,6 +11,13 @@ export interface WorkerWorldStatus {
   mc?: { online: true; version: string; protocol: number; motd: string; players: { online: number; max: number } } | { online: false };
 }
 
+export interface BackupInfo {
+  id: string;
+  label: string;
+  createdAt: string;
+  bytes: number;
+}
+
 export class WorkerClient {
   base: URL;
   token: string;
@@ -58,6 +65,15 @@ export class WorkerClient {
   }
   async rcon(slug: string, commands: string[]): Promise<string[]> {
     return (await this.call<{ outputs: string[] }>("POST", `/worlds/${slug}/rcon`, { commands }, 60_000)).outputs;
+  }
+  backup(slug: string, label: string): Promise<BackupInfo> {
+    return this.call("POST", `/worlds/${slug}/backups`, { label }, 600_000);
+  }
+  listBackups(slug: string): Promise<BackupInfo[]> {
+    return this.call("GET", `/worlds/${slug}/backups`);
+  }
+  restore(slug: string, id: string): Promise<{ safetyBackup: BackupInfo }> {
+    return this.call("POST", `/worlds/${slug}/restore`, { id }, 900_000);
   }
   logs(slug: string, tail = 200): Promise<string> {
     return this.call("GET", `/worlds/${slug}/logs?tail=${tail}`);

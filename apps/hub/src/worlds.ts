@@ -3,7 +3,7 @@
 import { randomBytes } from "node:crypto";
 import { instantiateRecipe, loadRecipes, WorldProperties, WorldSpec, type Recipe } from "@worldsmith/core";
 import { audit, type Db } from "./db.ts";
-import type { WorkerClient, WorkerWorldStatus } from "./worker-client.ts";
+import type { BackupInfo, WorkerClient, WorkerWorldStatus } from "./worker-client.ts";
 import type { AccessService } from "./access.ts";
 
 export interface WorldRow {
@@ -13,8 +13,11 @@ export interface WorldRow {
   spec: string;
   created_at: number;
   last_active_at: number | null;
+  last_backup_at: number | null;
   only_with_me: number;
 }
+
+const PERIODIC_BACKUP_MS = 6 * 60 * 60 * 1000;
 
 export type WorldState = "asleep" | "waking" | "online" | "missing" | "error";
 
@@ -107,6 +110,7 @@ export class WorldService {
     const spec = this.spec(slug);
     const s = await this.worker.status(slug);
     if (s.container === "running") throw new Error(`${spec.name} is running. Stop it first.`);
+    if (s.container !== "missing") await this.backup(slug, "before-apply");
     await this.worker.apply(spec, randomBytes(24).toString("base64url"), this.access.accessFiles(slug));
     this.statusCache.delete(slug);
     audit(this.db, "world_reapplied", { slug });
@@ -178,6 +182,36 @@ export class WorldService {
     this.statusCache.delete(slug);
     await this.worker.stop(slug);
     audit(this.db, "world_stopped", { slug, reason });
+    // Going to sleep is the natural snapshot point: back up if anyone played since the last one.
+    const r = this.row(slug);
+    if (r && (r.last_active_at ?? 0) > (r.last_backup_at ?? 0)) {
+      await this.backup(slug, "sleep").catch((err) => console.error("backup on sleep failed", slug, err));
+    }
+  }
+
+  async backup(slug: string, label: string): Promise<BackupInfo> {
+    this.spec(slug);
+    const info = await this.worker.backup(slug, label);
+    this.db.prepare("UPDATE worlds SET last_backup_at = ? WHERE slug = ?").run(Date.now(), slug);
+    audit(this.db, "world_backed_up", { slug, label, id: info.id, bytes: info.bytes });
+    return info;
+  }
+
+  listBackups(slug: string): Promise<BackupInfo[]> {
+    this.spec(slug);
+    return this.worker.listBackups(slug);
+  }
+
+  /** Owner-only (portal): roll a world back. Takes a safety backup, restores, re-installs the recipe's files. */
+  async restore(slug: string, id: string): Promise<WorldView> {
+    const spec = this.spec(slug); // unknown world → clear error before touching the worker
+    const s = await this.worker.status(slug);
+    if (s.container === "running") await this.stop(slug, "restore");
+    const { safetyBackup } = await this.worker.restore(slug, id);
+    await this.worker.apply(spec, randomBytes(24).toString("base64url"), this.access.accessFiles(slug));
+    this.statusCache.delete(slug);
+    audit(this.db, "world_restored", { slug, id, safetyBackup: safetyBackup.id });
+    return this.view(slug, true);
   }
 
   /** Push the current whitelist/ops to a world (files always; live reload if it's running). */
@@ -208,7 +242,12 @@ export class WorldService {
         continue;
       }
       if (s.container !== "running") continue;
-      if (s.mc?.online && s.mc.players.online > 0) continue;
+      if (s.mc?.online && s.mc.players.online > 0) {
+        if (Date.now() - (r.last_backup_at ?? 0) > PERIODIC_BACKUP_MS) {
+          await this.backup(r.slug, "periodic").catch((err) => console.error("periodic backup failed", r.slug, err));
+        }
+        continue;
+      }
       const idleMinutes = WorldSpec.parse(JSON.parse(r.spec)).idleSleepMinutes;
       const lastActive = Math.max(r.last_active_at ?? 0, s.startedAt ? Date.parse(s.startedAt) : 0);
       if (Date.now() - lastActive > idleMinutes * 60_000) await this.stop(r.slug, `idle ${idleMinutes} min`);

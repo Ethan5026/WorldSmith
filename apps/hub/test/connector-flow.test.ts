@@ -287,3 +287,16 @@ test("invite link: friend opens it, enters their name, gets the address; link th
   assert.equal((await fetch(`${pub}/invite/made-up-token`)).status, 410);
   assert.equal((await fetch(`${priv}/api/invites`, { headers: { "Tailscale-User-Login": "x@y.z" } })).status, 403, "only the owner makes invites");
 });
+
+test("world sub-routes reach their own handlers (not the generic start/stop/feature route)", async () => {
+  const OWNER_POST = { ...OWNER, "X-WorldSmith": "1", "Content-Type": "application/json" };
+  // No world "ghost" exists: each specific route must answer with its own "No world" error, never the
+  // generic route's "Invalid option: expected one of start|stop|feature|apply".
+  for (const sub of ["backups", "restore"]) {
+    const r = await json(fetch(`${priv}/api/worlds/ghost/${sub}`, { method: "POST", headers: OWNER_POST, body: JSON.stringify({ id: "20261005-000000-x.tar.gz" }) }));
+    assert.doesNotMatch(String(r.error), /expected one of/, sub);
+    assert.match(String(r.error), /No world called "ghost"/, sub);
+  }
+  const bogus = await fetch(`${priv}/api/worlds/ghost/explode`, { method: "POST", headers: OWNER_POST });
+  assert.equal(bogus.status, 404, "unknown actions fall through to 404");
+});

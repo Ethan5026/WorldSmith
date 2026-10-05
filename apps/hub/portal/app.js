@@ -94,6 +94,13 @@ async function loadWorlds() {
           if (w.state === "online" || w.state === "waking")
             actions.push(button("Put to sleep", "", async () => (await post(`/api/worlds/${w.slug}/stop`), toast(`${w.name} is asleep.`), refresh())));
           if (!w.featured) actions.push(button("Feature", "", async () => (await post(`/api/worlds/${w.slug}/feature`), toast(`Friends now join ${w.name}.`), refresh())));
+          const backupBox = el("div", { class: "stack backups", hidden: "" });
+          actions.push(
+            button("Backups", "", async () => {
+              backupBox.hidden = !backupBox.hidden;
+              if (!backupBox.hidden) await renderBackups(w, backupBox);
+            }),
+          );
           const players = w.state === "online" ? ` · ${w.players.online} playing` : "";
           const accessBox = el("div", { class: "stack access" });
           renderAccess(w, accessBox).catch((e) => toast(e.message));
@@ -109,6 +116,7 @@ async function loadWorlds() {
             el("p", { class: "muted small" }, `${w.featured ? "Featured · friends join this one · " : ""}Minecraft ${w.version}${players}`),
             actions.length ? el("div", { class: "row" }, ...actions) : null,
             accessBox,
+            backupBox,
           );
         })),
   );
@@ -172,6 +180,49 @@ async function renderAccess(w, box) {
     );
   }
   box.replaceChildren(...parts);
+}
+
+// ---- backups -------------------------------------------------------------------------------
+const LABELS = { sleep: "went to sleep", periodic: "every 6 hours", manual: "you", claude: "Claude", "before-apply": "before an update", "before-restore": "before a restore" };
+const size = (b) => (b > 1e6 ? `${(b / 1e6).toFixed(1)} MB` : `${Math.max(1, Math.round(b / 1e3))} KB`);
+
+async function renderBackups(w, box) {
+  box.replaceChildren(el("p", { class: "muted small" }, "Loading backups…"));
+  const list = await api(`/api/worlds/${w.slug}/backups`);
+  const now = button("Back up now", "primary", async () => {
+    await post(`/api/worlds/${w.slug}/backups`);
+    toast(`Backed up ${w.name}.`);
+    renderBackups(w, box);
+  });
+  box.replaceChildren(
+    now,
+    ...(list.length === 0
+      ? [el("p", { class: "muted small" }, "No backups yet. One is made automatically each time the world goes to sleep after being played.")]
+      : list.map((b) => {
+          let armed = false;
+          const restore = button("Restore", "danger", async () => {
+            if (!armed) {
+              armed = true;
+              restore.textContent = "Tap again to roll back";
+              setTimeout(() => {
+                armed = false;
+                restore.textContent = "Restore";
+              }, 5000);
+              return;
+            }
+            restore.textContent = "Restoring…";
+            await post(`/api/worlds/${w.slug}/restore`, { id: b.id });
+            toast(`${w.name} is back to ${new Date(b.createdAt).toLocaleString()}. Your previous state was saved too.`);
+            refresh();
+          });
+          return el(
+            "div",
+            { class: "row conn backup" },
+            el("span", { class: "small" }, `${new Date(b.createdAt).toLocaleString()} · ${LABELS[b.label] ?? b.label} · ${size(b.bytes)}`),
+            restore,
+          );
+        })),
+  );
 }
 
 // ---- invites -------------------------------------------------------------------------------

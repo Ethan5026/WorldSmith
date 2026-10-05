@@ -68,6 +68,21 @@ export function createWorkerApp(runtime: WorldRuntime, token: string): express.E
       return { outputs: await runtime.rcon(slugOf(req), commands) };
     }),
   );
+  app.get("/worlds/:slug/backups", handle(async (req) => runtime.listBackups(slugOf(req))));
+  app.post(
+    "/worlds/:slug/backups",
+    handle(async (req) => {
+      const { label } = z.object({ label: z.string().max(32).default("manual") }).parse(req.body ?? {});
+      return runtime.backup(slugOf(req), label);
+    }),
+  );
+  app.post(
+    "/worlds/:slug/restore",
+    handle(async (req) => {
+      const { id } = z.object({ id: z.string().max(80) }).parse(req.body);
+      return { safetyBackup: await runtime.restore(slugOf(req), id) };
+    }),
+  );
   app.get(
     "/worlds/:slug/logs",
     handle(async (req, res) => {

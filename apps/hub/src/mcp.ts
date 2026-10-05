@@ -170,6 +170,22 @@ export function createMcpServer(config: Config, services: HubServices, clientId?
   );
 
   server.registerTool(
+    "backup_world",
+    {
+      title: "Back up a world",
+      description: "Save a backup of a world now (safe while people play). Do this before big changes. Restoring backups is done by the owner in the portal.",
+      inputSchema: { slug: slugArg, label: z.string().max(24).regex(/^[a-z0-9-]+$/).optional().describe("Short label, e.g. before-arena") },
+    },
+    async ({ slug, label }) => json(await worlds.backup(resolve(slug), label ?? "claude")),
+  );
+
+  server.registerTool(
+    "list_backups",
+    { title: "List backups", description: "Backups of a world, newest first.", inputSchema: { slug: slugArg }, annotations: { readOnlyHint: true } },
+    async ({ slug }) => json(await worlds.listBackups(resolve(slug))),
+  );
+
+  server.registerTool(
     "minecraft_reference",
     {
       title: "Minecraft reference",

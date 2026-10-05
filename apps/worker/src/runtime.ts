@@ -13,6 +13,7 @@ import {
 } from "@worldsmith/core";
 import { RconClient, statusPing, descriptionText } from "@worldsmith/mcproto";
 import { buildTar, resolveFile, type ResolvedFile } from "./files.ts";
+import { Backups, isBackupId, type BackupInfo } from "./backups.ts";
 
 const MANAGED_LABEL = "worldsmith.world";
 const RCON_PORT = 25575;
@@ -32,11 +33,13 @@ export class WorldRuntime {
   docker: Docker;
   network: string;
   cacheDir: string;
+  backups: Backups;
 
-  constructor(opts: { network: string; cacheDir: string; socketPath?: string }) {
+  constructor(opts: { network: string; cacheDir: string; backupsDir: string; socketPath?: string }) {
     this.docker = new Docker({ socketPath: opts.socketPath ?? "/var/run/docker.sock" });
     this.network = opts.network;
     this.cacheDir = opts.cacheDir;
+    this.backups = new Backups(opts.backupsDir);
   }
 
   private container(slug: string) {
@@ -199,6 +202,54 @@ export class WorldRuntime {
       return out;
     } finally {
       client.close();
+    }
+  }
+
+  /** Back up a world. Running worlds pause autosave and flush to disk for a consistent copy. */
+  async backup(slug: string, label: string): Promise<BackupInfo> {
+    const info = await this.inspect(slug);
+    if (!info) throw new Error(`World ${slug} does not exist`);
+    const live = info.State.Running && (await this.status(slug)).mc?.online === true;
+    if (live) await this.rcon(slug, ["save-off", "save-all flush"]);
+    try {
+      return await this.backups.create(this.container(slug), slug, label);
+    } finally {
+      if (live) await this.rcon(slug, ["save-on"]).catch(() => undefined);
+    }
+  }
+
+  listBackups(slug: string): BackupInfo[] {
+    return this.backups.list(slug);
+  }
+
+  /** Replace a stopped world's data with a backup (after taking a safety backup of the current state). */
+  async restore(slug: string, id: string): Promise<BackupInfo> {
+    if (!isBackupId(id)) throw new Error("Not a backup id");
+    if (!this.backups.list(slug).some((b) => b.id === id)) throw new Error(`No backup ${id} for ${slug}`);
+    const info = await this.inspect(slug);
+    if (!info) throw new Error(`World ${slug} does not exist`);
+    if (info.State.Running) throw new Error("Stop the world before restoring a backup");
+    const safety = await this.backups.create(this.container(slug), slug, "before-restore");
+    await this.wipeVolume(slug);
+    await this.backups.unpack(this.container(slug), slug, id);
+    return safety;
+  }
+
+  private async wipeVolume(slug: string): Promise<void> {
+    const image = "alpine:3.20";
+    await this.ensureImage(image);
+    const helper = await this.docker.createContainer({
+      Image: image,
+      Cmd: ["sh", "-c", "find /data -mindepth 1 -maxdepth 1 -exec rm -rf {} +"],
+      Labels: { "worldsmith.helper": "wipe" },
+      HostConfig: { Mounts: [{ Type: "volume", Source: worldVolumeName(slug), Target: "/data" }], NetworkMode: "none" },
+    });
+    try {
+      await helper.start();
+      const result = (await helper.wait()) as { StatusCode: number };
+      if (result.StatusCode !== 0) throw new Error(`Wiping ${slug} failed (exit ${result.StatusCode})`);
+    } finally {
+      await helper.remove({ force: true });
     }
   }
 

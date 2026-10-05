@@ -90,9 +90,12 @@ export function createPrivateApp(config: Config, db: Db, oauth: OwnerApprovalOAu
       return worlds.adopt(body.recipe, Slug.parse(req.params.slug), body.name, body.properties);
     }),
   );
+  const WORLD_ACTIONS = ["start", "stop", "feature", "apply"];
   app.post(
     "/api/worlds/:slug/:action",
     csrf,
+    // Only claim the simple actions; let /backups, /restore, /adopt fall through to their own routes.
+    (req, _res, next) => next(WORLD_ACTIONS.includes(String(req.params.action)) ? undefined : "route"),
     handle(async (req) => {
       const slug = Slug.parse(req.params.slug);
       const action = z.enum(["start", "stop", "feature", "apply"]).parse(req.params.action);
@@ -125,6 +128,19 @@ export function createPrivateApp(config: Config, db: Db, oauth: OwnerApprovalOAu
       await worlds.syncAccess(slug);
       return access.worldAccess(slug);
     }),
+  );
+
+  // ---- backups ----
+  app.get("/api/worlds/:slug/backups", handle((req) => worlds.listBackups(Slug.parse(req.params.slug))));
+  app.post(
+    "/api/worlds/:slug/backups",
+    csrf,
+    handle((req) => worlds.backup(Slug.parse(req.params.slug), "manual")),
+  );
+  app.post(
+    "/api/worlds/:slug/restore",
+    csrf,
+    handle((req) => worlds.restore(Slug.parse(req.params.slug), z.object({ id: z.string().max(80) }).parse(req.body).id)),
   );
 
   // ---- invites ----
