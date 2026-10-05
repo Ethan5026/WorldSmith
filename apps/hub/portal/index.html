@@ -42,7 +42,8 @@
       <div id="player-list" class="stack"></div>
       <form id="add-player" class="row add">
         <label class="sr-only" for="add-name">Minecraft username</label>
-        <input id="add-name" name="name" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Minecraft username" minlength="3" maxlength="16" pattern="[A-Za-z0-9_]{3,16}" required>
+        <select id="add-platform" aria-label="Edition"><option value="java">Java</option><option value="bedrock">Bedrock</option></select>
+        <input id="add-name" name="name" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Java username or Xbox gamertag" minlength="3" maxlength="16" required>
         <button type="submit" class="primary">Add friend</button>
       </form>
       <p class="muted small">Or just give friends the server address: when they try to join, you'll get a notification to approve them.</p>
@@ -68,8 +69,10 @@
       <div id="invite-list" class="stack"></div>
       <form id="address-form" class="row add">
         <label class="sr-only" for="java-address">Server address friends use</label>
-        <input id="java-address" placeholder="Server address friends use (from playit)" maxlength="120" autocapitalize="off" spellcheck="false">
-        <button type="submit">Save address</button>
+        <input id="java-address" placeholder="Java address (from playit)" maxlength="120" autocapitalize="off" spellcheck="false">
+        <label class="sr-only" for="bedrock-address">Bedrock address and port</label>
+        <input id="bedrock-address" placeholder="Bedrock address:port (from playit)" maxlength="120" autocapitalize="off" spellcheck="false">
+        <button type="submit">Save addresses</button>
       </form>
     </section>
 

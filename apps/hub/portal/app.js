@@ -60,7 +60,7 @@ async function loadRequests() {
       el(
         "div",
         { class: "card approval stack" },
-        el("p", {}, el("span", { class: "who" }, r.name), ` tried to join${r.attempts > 1 ? ` ${r.attempts} times` : ""} · ${ago(r.last_seen)}`),
+        el("p", {}, el("span", { class: "who" }, r.name), r.platform === "bedrock" ? el("span", { class: "pill" }, "Bedrock") : null, ` tried to join${r.attempts > 1 ? ` ${r.attempts} times` : ""} · ${ago(r.last_seen)}`),
         el(
           "div",
           { class: "row" },
@@ -252,6 +252,7 @@ async function loadInvites(worlds) {
   );
   const settings = await api("/api/settings");
   if (document.activeElement !== $("java-address")) $("java-address").value = settings.java_address ?? "";
+  if (document.activeElement !== $("bedrock-address")) $("bedrock-address").value = settings.bedrock_address ?? "";
 }
 
 $("invite-form").addEventListener("submit", async (e) => {
@@ -282,8 +283,8 @@ $("invite-form").addEventListener("submit", async (e) => {
 $("address-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   try {
-    await api("/api/settings", { method: "PUT", body: JSON.stringify({ java_address: $("java-address").value.trim() || null }) });
-    toast("Saved. Invite pages will show this address.");
+    await api("/api/settings", { method: "PUT", body: JSON.stringify({ java_address: $("java-address").value.trim() || null, bedrock_address: $("bedrock-address").value.trim() || null }) });
+    toast("Saved. Invite pages will show these addresses.");
   } catch (err) {
     toast(err.message);
   }
@@ -317,7 +318,7 @@ $("add-player").addEventListener("submit", async (e) => {
   const btn = e.target.querySelector("button");
   btn.disabled = true;
   try {
-    const p = await post("/api/players", { name: input.value.trim() });
+    const p = await post("/api/players", { name: input.value.trim(), platform: $("add-platform").value });
     toast(`${p.name} can join now.`);
     input.value = "";
     refresh();

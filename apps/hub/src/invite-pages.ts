@@ -58,6 +58,7 @@ function page(res: express.Response, status: number, title: string, body: string
 export function mountInvitePages(app: express.Express, services: HubServices, ownerName: string): void {
   const { access, worlds } = services;
   const address = (): string | undefined => services.settings.get("java_address");
+  const bedrockAddress = (): string | undefined => services.settings.get("bedrock_address");
 
   const worldLabel = (slug: string | null): { name: string; version: string } | undefined => {
     const target = slug ?? worlds.featuredSlug();
@@ -70,12 +71,17 @@ export function mountInvitePages(app: express.Express, services: HubServices, ow
     <h1>${esc(ownerName)} invited you to play Minecraft</h1>
     <p class="muted">${worldName ? `World: <strong>${esc(worldName)}</strong>. ` : ""}This link lets you onto ${esc(ownerName)}'s private server.</p>
     <form class="card" method="post" action="/invite/${esc(token)}">
-      <label for="name">Your Minecraft: Java Edition username</label>
-      <input id="name" name="name" required minlength="3" maxlength="16" pattern="[A-Za-z0-9_]{3,16}" autocomplete="username" autocapitalize="off" spellcheck="false">
+      <label for="platform">How do you play?</label>
+      <select id="platform" name="platform">
+        <option value="java">Java Edition (PC/Mac launcher)</option>
+        <option value="bedrock">Bedrock (Xbox, PlayStation, Switch, phone, Windows store)</option>
+      </select>
+      <label for="name">Your Java username or Xbox gamertag</label>
+      <input id="name" name="name" required minlength="3" maxlength="16" autocomplete="username" autocapitalize="off" spellcheck="false">
       ${error ? `<p class="error" role="alert">${esc(error)}</p>` : ""}
       <button type="submit">Let me in</button>
     </form>
-    <p class="muted">Playing on Xbox, PlayStation, Switch or a phone (Bedrock)? Ask ${esc(ownerName)}; that's coming soon.</p>`;
+`;
 
   app.get("/invite/:token", (req, res) => {
     if (rateLimited(req.ip ?? "?")) return page(res, 429, "Slow down", "<h1>Too many tries</h1><p>Wait a few minutes and try again.</p>");
@@ -91,11 +97,13 @@ export function mountInvitePages(app: express.Express, services: HubServices, ow
     if (!inv) return page(res, 410, "Invite expired", `<h1>This invite has expired</h1><p class="muted">Ask ${esc(ownerName)} for a new link.</p>`);
     const world = worldLabel(inv.world_slug);
     const name = String(req.body?.name ?? "").trim();
-    if (!isValidUsername(name)) {
-      return page(res, 400, "You're invited", form(token, world?.name, "Minecraft usernames are 3–16 letters, numbers or underscores."));
+    const platform = req.body?.platform === "bedrock" ? "bedrock" : "java";
+    const nameOk = platform === "bedrock" ? /^[A-Za-z0-9 _]{1,16}$/.test(name) : isValidUsername(name);
+    if (!nameOk) {
+      return page(res, 400, "You're invited", form(token, world?.name, "That doesn't look like a Java username or Xbox gamertag."));
     }
     try {
-      const { player } = await access.redeemInvite(token, name);
+      const { player } = await access.redeemInvite(token, name, platform);
       await worlds.syncAccessEverywhere();
       void services.push.notify({
         title: `${player.name} joined your friends list`,
@@ -103,7 +111,24 @@ export function mountInvitePages(app: express.Express, services: HubServices, ow
         url: "/",
         tag: `invite-${player.uuid}`,
       });
-      const addr = address();
+      const addr = player.platform === "bedrock" ? bedrockAddress() : address();
+      if (player.platform === "bedrock") {
+        return page(
+          res,
+          200,
+          "You're in",
+          `<h1>You're in, ${esc(player.name)}!</h1>
+          <div class="card">
+            <p class="muted">Bedrock server address and port</p>
+            ${addr ? `<code>${esc(addr)}</code>` : `<p>Ask ${esc(ownerName)} for the Bedrock address.</p>`}
+          </div>
+          <ol>
+            <li><strong>Phone / Windows:</strong> Play → Servers → Add Server, then enter the address and port.</li>
+            <li><strong>Xbox / PlayStation / Switch:</strong> ask ${esc(ownerName)} for the friend account to add. The server then shows in your Friends tab.</li>
+            <li>Join. If the world is asleep, it wakes up; join again after about a minute.</li>
+          </ol>`,
+        );
+      }
       page(
         res,
         200,

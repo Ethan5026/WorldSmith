@@ -1,0 +1,51 @@
+# WorldSmith Geyser config (Geyser 2.11.x, config-version 8). Copied over /geyser/config.yml at every start.
+# Bedrock players → this Geyser (UDP 19132) → gatekeeper (127.0.0.1:25565, same network namespace) → world.
+config-version: 8
+
+bedrock:
+  address: 0.0.0.0
+  port: 19132
+  webrtc-port: 0
+  # RakNet works through the playit UDP tunnel. NetherNet (Bedrock's newer transport) can be added later.
+  transport: raknet
+  signaling:
+    mode: none
+
+java:
+  # The gatekeeper: join requests, wake on join, version help apply to Bedrock players too.
+  address: 127.0.0.1
+  port: 25565
+  # Floodgate in each world lets Bedrock players in without a Java account; the shared key proves it's us.
+  auth-type: floodgate
+  forward-hostname: false
+
+motd:
+  primary-motd: WorldSmith
+  secondary-motd: Bedrock
+  # Show the gatekeeper's MOTD (featured world, asleep/online) to Bedrock players too.
+  passthrough-motd: true
+  max-players: 20
+  passthrough-player-counts: true
+  ping-passthrough-interval: 5
+
+gameplay:
+  server-name: WorldSmith
+  cooldown-type: crosshair
+  command-suggestions: true
+  show-coordinates: true
+  enable-custom-content: true
+  force-resource-packs: true
+  enable-integrated-pack: true
+  xbox-achievements-enabled: false
+  max-visible-custom-skulls: 128
+  custom-skull-render-distance: 32
+
+# Everyone arrives through playit/127.0.0.1 anyway; don't keep IP logs.
+log-player-ip-addresses: false
+notify-on-new-bedrock-update: true
+
+advanced:
+  floodgate-key-file: key.pem
+
+# No third-party usage metrics.
+enable-metrics: false

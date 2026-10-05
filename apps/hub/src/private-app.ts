@@ -196,8 +196,10 @@ export function createPrivateApp(config: Config, db: Db, oauth: OwnerApprovalOAu
     "/api/players",
     csrf,
     handle(async (req) => {
-      const { name, role } = z.object({ name: z.string().min(3).max(16), role: z.enum(["admin", "player"]).default("player") }).parse(req.body);
-      const player = await access.addJavaPlayer(name, role);
+      const { name, role, platform } = z
+        .object({ name: z.string().min(3).max(16), role: z.enum(["admin", "player"]).default("player"), platform: z.enum(["java", "bedrock"]).default("java") })
+        .parse(req.body);
+      const player = platform === "bedrock" ? await access.addBedrockPlayer(name, role) : await access.addJavaPlayer(name, role);
       await worlds.syncAccessEverywhere();
       return player;
     }),

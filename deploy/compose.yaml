@@ -89,6 +89,7 @@ services:
     networks: [default, worlds]
     ports:
       - "127.0.0.1:25565:25565" # local testing from this PC only; friends come in via playit
+      - "127.0.0.1:19132:19132/udp" # Geyser (Bedrock), same: local testing only
 
   playit:
     profiles: [hub]
@@ -104,6 +105,25 @@ services:
       SECRET_KEY: ${PLAYIT_SECRET:?set PLAYIT_SECRET in deploy/.env}
     security_opt: ["no-new-privileges:true"]
     restart: unless-stopped
+
+  # Bedrock players: Geyser shares the gatekeeper's network namespace, so its Java target
+  # 127.0.0.1:25565 IS the gatekeeper, and playit's Bedrock tunnel reaches it at 127.0.0.1:19132.
+  geyser:
+    <<: *hardening
+    profiles: [hub]
+    build:
+      context: ..
+      dockerfile: apps/geyser/Dockerfile
+    network_mode: service:gatekeeper
+    depends_on:
+      gatekeeper:
+        condition: service_started
+        restart: true
+    environment:
+      FLOODGATE_KEY_B64: ${FLOODGATE_KEY_B64:?set FLOODGATE_KEY_B64 in deploy/.env}
+    volumes:
+      - geyser-data:/geyser # Geyser's cache of Minecraft assets, logs
+    tmpfs: [/tmp]
 
   # ---- worker: runs the world containers -------------------------------------------------------
   worker:
@@ -134,4 +154,5 @@ volumes:
   hub-data:
   worker-cache:
   worker-backups:
+  geyser-data:
   hub-ipc:

@@ -269,7 +269,7 @@ test("invite link: friend opens it, enters their name, gets the address; link th
   const pageRes = await fetch(`${pub}${invitePath}`);
   assert.equal(pageRes.status, 200);
   assert.match(pageRes.headers.get("content-security-policy") ?? "", /default-src 'none'/);
-  assert.match(await pageRes.text(), /Minecraft: Java Edition username/);
+  assert.match(await pageRes.text(), /Java username or Xbox gamertag/);
 
   const bad = await fetch(`${pub}${invitePath}`, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: "name=No%20Spaces" });
   assert.equal(bad.status, 400);
