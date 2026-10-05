@@ -208,7 +208,7 @@ test("Bedrock approval before verification is saved and claimed on the first ver
   assert.equal(bedrock.preapprovals().length, 0, "used once");
   assert.equal(await bedrock.claimPreapproval("Ethan5026", "00000000-0000-0000-0009-01f64f65c7c3"), undefined);
   const ops = bedrock.accessFiles("oneblock").find((f) => f.path === "ops.json");
-  assert.ok(ops && ops.kind === "inline" && ops.content.includes('".Ethan5026"') === false && ops.content.includes("Ethan5026"));
+  assert.ok(ops && ops.kind === "inline" && ops.content.includes('".Ethan5026"'), "Bedrock operators appear with Floodgate's dot prefix");
 });
 
 test("Bedrock operators are opped by their dotted server name, never the same-named Java account", async () => {
