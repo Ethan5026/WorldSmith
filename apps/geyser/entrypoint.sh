@@ -8,4 +8,6 @@ if [ -z "${FLOODGATE_KEY_B64:-}" ]; then
 fi
 umask 077
 echo "$FLOODGATE_KEY_B64" | base64 -d > /geyser/key.pem
-exec java -Xmx"${GEYSER_MEMORY:-512M}" -jar /opt/geyser/Geyser-Standalone.jar --nogui
+mkdir -p /geyser/native
+# Netty unpacks its native transport here; /tmp is a noexec tmpfs in this hardened container.
+exec java -Xmx"${GEYSER_MEMORY:-512M}" -Dio.netty.native.workdir=/geyser/native -jar /opt/geyser/Geyser-Standalone.jar --nogui

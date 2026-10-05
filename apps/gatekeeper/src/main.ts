@@ -106,6 +106,8 @@ function handle(client: net.Socket): void {
         claimedUuid,
         host: h.serverAddress,
         platform: h.floodgate ? "bedrock" : "java",
+        // Encrypted Bedrock identity from Geyser; only the hub holds the key to read it.
+        floodgate: h.floodgate ? h.rawServerAddress : undefined,
       });
     } catch (err) {
       log("hub_unreachable", { remote, error: (err as Error).message });

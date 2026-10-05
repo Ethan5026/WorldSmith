@@ -39,6 +39,8 @@ export const config = {
   recipesDir: process.env.RECIPES_DIR ?? fileURLToPath(new URL("../../../recipes", import.meta.url)),
   /** Unix socket the gatekeeper uses to ask for join decisions (shared volume, no network). */
   gateSocket: process.env.GATE_SOCKET ?? "/ipc/hub.sock",
+  /** Shared with Geyser/Floodgate; lets the hub verify Bedrock logins and read the real XUID. */
+  floodgateKey: process.env.FLOODGATE_KEY_B64 || undefined,
   /** Only for local testing with MCP Inspector; never set in deployment. */
   allowLocalRedirects: process.env.DEV_ALLOW_LOCAL_REDIRECTS === "1",
 } as const;

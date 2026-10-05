@@ -67,6 +67,7 @@ services:
       WORKER_URL: ${WORKER_URL:-http://worker:7070}
       WORKER_TOKEN: ${WORKER_TOKEN:?set WORKER_TOKEN in deploy/.env}
       GATE_SOCKET: /ipc/hub.sock
+      FLOODGATE_KEY_B64: ${FLOODGATE_KEY_B64:-}
     volumes:
       - hub-data:/data
       - hub-ipc:/ipc # gate socket shared with the gatekeeper; no network path

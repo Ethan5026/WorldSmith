@@ -143,3 +143,16 @@ test("a Bedrock stranger's request becomes a Bedrock friend when approved", asyn
   assert.equal(p.platform, "bedrock");
   assert.match(p.uuid, /^00000000-0000-0000-/);
 });
+
+test("a verified Bedrock request (Floodgate UUID from the login) is approved without any gamertag lookup", async () => {
+  let lookups = 0;
+  const bedrock = new AccessService(db, fakeLookup, async () => (lookups++, null));
+  const verified = "00000000-0000-0000-0009-01f64f65c7c3";
+  const { request } = bedrock.recordAttempt("Ethan5026", verified, "oneblock", "bedrock");
+  const p = await bedrock.approve(request.id);
+  assert.equal(lookups, 0, "no GeyserMC API call needed");
+  assert.equal(p.uuid, verified);
+  assert.equal(p.platform, "bedrock");
+  assert.ok(bedrock.findApproved("anything", verified, "bedrock"), "matched by verified UUID, not name");
+  assert.equal(bedrock.findApproved("Ethan5026", undefined, "java")?.role, "owner", "the Java owner account is untouched");
+});

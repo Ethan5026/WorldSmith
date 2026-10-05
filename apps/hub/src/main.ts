@@ -22,7 +22,7 @@ const push = new Push(db, config.dataDir, config.portalUrl.origin);
 const worker = new WorkerClient(config.workerUrl, config.workerToken);
 const access = new AccessService(db);
 const worlds = new WorldService(db, worker, access, config.recipesDir);
-const gate = new GateService(db, access, worlds, push, config.ownerName);
+const gate = new GateService(db, access, worlds, push, config.ownerName, config.floodgateKey);
 
 const oauth = new OwnerApprovalOAuth(db, {
   resourceUrl: config.mcpUrl,

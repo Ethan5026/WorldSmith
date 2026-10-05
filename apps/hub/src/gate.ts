@@ -5,6 +5,8 @@ import express from "express";
 import { existsSync, unlinkSync, chmodSync } from "node:fs";
 import { z } from "zod";
 import { isValidUsername, type TextComponent } from "@worldsmith/mcproto";
+import { decodeFloodgate, floodgatePayload } from "./floodgate.ts";
+import { floodgateUuid } from "./mojang.ts";
 import { audit, type Db } from "./db.ts";
 import type { AccessService } from "./access.ts";
 import type { WorldService } from "./worlds.ts";
@@ -28,14 +30,16 @@ export class GateService {
   worlds: WorldService;
   push: Push;
   ownerName: string;
+  floodgateKey: string | undefined;
   private lastPlayingNotice = new Map<string, number>();
 
-  constructor(db: Db, access: AccessService, worlds: WorldService, push: Push, ownerName: string) {
+  constructor(db: Db, access: AccessService, worlds: WorldService, push: Push, ownerName: string, floodgateKey?: string) {
     this.db = db;
     this.access = access;
     this.worlds = worlds;
     this.push = push;
     this.ownerName = ownerName;
+    this.floodgateKey = floodgateKey;
   }
 
   async status(clientProtocol: number): Promise<StatusAnswer> {
@@ -64,8 +68,33 @@ export class GateService {
     };
   }
 
-  async login(input: { protocol: number; username: string; claimedUuid?: string; host: string; platform?: "java" | "bedrock" }): Promise<LoginDecision> {
+  async login(input: {
+    protocol: number;
+    username: string;
+    claimedUuid?: string;
+    host: string;
+    platform?: "java" | "bedrock";
+    floodgate?: string;
+  }): Promise<LoginDecision> {
     const platform = input.platform ?? "java";
+    if (platform === "bedrock" && this.floodgateKey) {
+      // Verify Geyser's encrypted identity: a forged Bedrock login stops here, a real one gives the true XUID.
+      const payload = input.floodgate ? floodgatePayload(input.floodgate) : undefined;
+      const id = payload ? decodeFloodgate(payload, this.floodgateKey) : undefined;
+      if (id) {
+        input = { ...input, claimedUuid: floodgateUuid(id.xuid) };
+      } else {
+        // Fall back to the gamertag (the world's Floodgate still rejects forgeries), and record enough
+        // structure — never the data itself — to diagnose a format mismatch.
+        audit(this.db, "gate_bedrock_unverified", {
+          name: input.username,
+          hasPayload: Boolean(payload),
+          payloadLength: payload?.length ?? 0,
+          versionChar: payload ? payload.charCodeAt("^Floodgate^".length) : null,
+          bangSeparator: payload ? payload.includes("!") : null,
+        });
+      }
+    }
     const who = platform === "bedrock" ? `${input.username} (Bedrock)` : input.username;
     const slug = this.worlds.featuredSlug();
     const kick = (reason: TextComponent): LoginDecision => ({ action: "kick", reason });
@@ -173,6 +202,7 @@ const LoginInput = z.object({
   claimedUuid: z.string().max(40).optional(),
   host: z.string().max(300),
   platform: z.enum(["java", "bedrock"]).default("java"),
+  floodgate: z.string().max(3200).optional(),
 });
 
 /** Gatekeeper ↔ hub API on a Unix socket in a shared volume (never on a network). */

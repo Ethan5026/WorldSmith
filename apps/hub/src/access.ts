@@ -79,6 +79,8 @@ export class AccessService {
    */
   findApproved(name: string, claimedUuid?: string, platform: Platform = "java"): Player | undefined {
     if (platform === "bedrock") {
+      // With a verified Floodgate UUID, match the account exactly; otherwise fall back to the gamertag.
+      if (claimedUuid) return this.db.prepare("SELECT * FROM players WHERE platform = 'bedrock' AND uuid = ?").get(claimedUuid) as unknown as Player | undefined;
       return this.db.prepare("SELECT * FROM players WHERE platform = 'bedrock' AND lower(name) = lower(?)").get(name) as unknown as
         | Player
         | undefined;
@@ -104,11 +106,14 @@ export class AccessService {
   }
 
   /** Add a Bedrock player by Xbox gamertag (Geyser replaces spaces with underscores). */
-  async addBedrockPlayer(gamertag: string, role: Role = "player"): Promise<Player> {
+  async addBedrockPlayer(gamertag: string, role: Role = "player", verifiedUuid?: string): Promise<Player> {
     const name = gamertag.trim().replace(/ /g, "_");
-    const xuid = await this.lookupXuid(gamertag.trim());
-    if (!xuid) throw new Error(`No Xbox account has the gamertag "${gamertag}".`);
-    const uuid = floodgateUuid(xuid);
+    let uuid = verifiedUuid;
+    if (!uuid) {
+      const xuid = await this.lookupXuid(gamertag.trim());
+      if (!xuid) throw new Error(`No Xbox account has the gamertag "${gamertag}".`);
+      uuid = floodgateUuid(xuid);
+    }
     this.db
       .prepare(
         `INSERT INTO players (uuid, name, platform, role, approved_at) VALUES (?, ?, 'bedrock', ?, ?)
@@ -212,7 +217,7 @@ export class AccessService {
     } else {
       this.db
         .prepare("INSERT INTO join_requests (name, claimed_uuid, world_slug, platform, first_seen, last_seen) VALUES (?, ?, ?, ?, ?, ?)")
-        .run(name, platform === "bedrock" ? null : (claimedUuid ?? null), worldSlug ?? null, platform, now, now);
+        .run(name, claimedUuid ?? null, worldSlug ?? null, platform, now, now);
       audit(this.db, "join_request", { name, worldSlug, platform });
     }
     const request = this.db
@@ -233,9 +238,10 @@ export class AccessService {
     const req = this.db.prepare("SELECT * FROM join_requests WHERE id = ?").get(requestId) as unknown as JoinRequest | undefined;
     if (!req || req.status !== "pending") throw new Error("That request was already handled.");
     const platform = req.platform as Platform;
+    // Bedrock requests carry the Floodgate UUID verified from Geyser's encrypted login data.
     const player =
-      this.findApproved(req.name, undefined, platform) ??
-      (platform === "bedrock" ? await this.addBedrockPlayer(req.name) : await this.addJavaPlayer(req.name));
+      this.findApproved(req.name, platform === "bedrock" ? (req.claimed_uuid ?? undefined) : undefined, platform) ??
+      (platform === "bedrock" ? await this.addBedrockPlayer(req.name, "player", req.claimed_uuid ?? undefined) : await this.addJavaPlayer(req.name));
     if (req.world_slug) this.addMember(req.world_slug, player.uuid);
     this.db.prepare("UPDATE join_requests SET status = 'approved', decided_at = ? WHERE id = ?").run(Date.now(), requestId);
     audit(this.db, "join_approved", { requestId, name: player.name, worldSlug: req.world_slug });
