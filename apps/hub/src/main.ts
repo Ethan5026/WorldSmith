@@ -16,6 +16,7 @@ import { GateService, listenGate } from "./gate.ts";
 import { Settings } from "./settings.ts";
 import { BuildService } from "./builds.ts";
 import { ProposalService } from "./proposals.ts";
+import { Catalog } from "./catalog.ts";
 
 if (config.workerToken.length < 32) throw new Error("WORKER_TOKEN must be set (32+ chars)");
 
@@ -39,7 +40,8 @@ const oauth = new OwnerApprovalOAuth(db, {
   },
 });
 
-const services = { worlds, access, push, worker, settings: new Settings(db), builds: new BuildService(worlds), proposals: new ProposalService(db, worlds, push) };
+const builds = new BuildService(worlds);
+const services = { worlds, access, push, worker, settings: new Settings(db), builds, proposals: new ProposalService(db, worlds, push, new Catalog(), builds) };
 
 createPublicApp(config, oauth, services).listen(config.publicPort, "127.0.0.1", () => {
   console.log(`public listener on 127.0.0.1:${config.publicPort} → ${config.publicBaseUrl.href}`);

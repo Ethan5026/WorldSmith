@@ -94,6 +94,16 @@ export interface TemplateMeta {
   missingChunks?: number;
 }
 
+export interface SavedGame {
+  name: string;
+  title: string;
+  description?: string;
+  source: string;
+  createdAt: string;
+  bytes: number;
+  spec: WorldSpec;
+}
+
 export class WorkerClient {
   base: URL;
   token: string;
@@ -175,6 +185,21 @@ export class WorkerClient {
   }
   installMap(slug: string, id: string, root: string): Promise<{ files: number; bytes: number }> {
     return this.call("POST", `/worlds/${slug}/install-map`, { id, root }, 900_000);
+  }
+  listGames(): Promise<SavedGame[]> {
+    return this.call("GET", "/games");
+  }
+  getGame(name: string): Promise<SavedGame> {
+    return this.call("GET", `/games/${encodeURIComponent(name)}`);
+  }
+  deleteGame(name: string): Promise<void> {
+    return this.call("DELETE", `/games/${encodeURIComponent(name)}`);
+  }
+  saveGame(slug: string, input: { name: string; title: string; description?: string; spec: WorldSpec }): Promise<SavedGame> {
+    return this.call("POST", `/worlds/${slug}/save-game`, input, 600_000);
+  }
+  installGame(slug: string, name: string): Promise<void> {
+    return this.call("POST", `/worlds/${slug}/install-game`, { name }, 600_000);
   }
   listTemplates(): Promise<TemplateMeta[]> {
     return this.call("GET", "/templates");

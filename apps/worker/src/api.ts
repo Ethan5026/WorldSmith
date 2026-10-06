@@ -120,6 +120,23 @@ export function createWorkerApp(runtime: WorldRuntime, token: string): express.E
     }),
   );
 
+  // ---- saved minigames ----
+  const GameName = z.string().regex(/^[a-z0-9][a-z0-9-]{1,40}$/);
+  app.get("/games", handle(async () => runtime.games.list()));
+  app.get("/games/:name", handle(async (req) => runtime.games.get(GameName.parse(req.params.name))));
+  app.delete("/games/:name", handle(async (req) => runtime.games.remove(GameName.parse(req.params.name))));
+  app.post(
+    "/worlds/:slug/save-game",
+    handle(async (req) => {
+      const body = z.object({ name: GameName, title: z.string().min(1).max(60), description: z.string().max(500).optional(), spec: WorldSpec }).parse(req.body);
+      return runtime.saveGame(slugOf(req), body);
+    }),
+  );
+  app.post(
+    "/worlds/:slug/install-game",
+    handle(async (req) => runtime.installGame(slugOf(req), z.object({ name: GameName }).parse(req.body).name)),
+  );
+
   // ---- public maps ----
   app.get("/maps", handle(async () => runtime.maps.list()));
   app.get("/maps/:id", handle(async (req) => runtime.maps.get(MapId.parse(req.params.id))));

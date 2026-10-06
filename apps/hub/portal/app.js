@@ -170,6 +170,16 @@ function crossplayBlock(p, answers) {
 }
 
 const proposalAnswers = {};
+const proposalNotes = {};
+
+function baseLine(p) {
+  const b = p.base;
+  if (b.kind === "recipe") return `Starts from: ${b.name}. ${b.description}`;
+  if (b.kind === "map")
+    return `Starts from the map "${b.levelName}" · Minecraft ${b.version ?? "1.8 or older"}${b.needsUpgrade ? " (upgraded to 26.2 first)" : ""} · ${b.sizeMb} MB · ${b.source}`;
+  if (b.kind === "saved") return `A fresh copy of your saved minigame "${b.title}" (saved from ${b.savedFrom}, ${new Date(b.savedAt).toLocaleDateString()}) · ${b.sizeMb} MB`;
+  return b.note;
+}
 
 async function loadProposals() {
   const list = await api("/api/proposals");
@@ -179,40 +189,143 @@ async function loadProposals() {
   $("proposal-list").replaceChildren(
     ...list.map((p) => {
       const answers = (proposalAnswers[p.id] ??= {});
-      const r = p.request;
-      const facts = p.map
-        ? `From "${p.map.levelName}" · Minecraft ${p.map.version ?? "1.8 or older"}${p.map.needsUpgrade ? " (upgraded to 26.2 on first start)" : ""} · ${p.map.sizeMb} MB · ${p.map.source}`
-        : "The downloaded map is gone.";
+      const plan = p.plan;
+      const note = el("textarea", { id: `note-${p.id}`, rows: "2", maxlength: "1000", placeholder: "What should Claude change? (optional)" });
+      note.value = proposalNotes[p.id] ?? "";
+      note.addEventListener("input", () => (proposalNotes[p.id] = note.value));
       return el(
         "div",
         { class: `card stack${p.status === "pending" ? " approval" : ""}` },
-        el("div", { class: "section-head" }, el("span", { class: "who" }, r.name), el("span", { class: `pill ${p.status}` }, PROPOSAL_STATE[p.status] ?? p.status)),
-        el("p", { class: "muted small" }, `${p.createdBy} · ${ago(Date.parse(p.createdAt))}`),
-        r.notes ? el("p", { class: "notes" }, r.notes) : null,
-        el("p", { class: "small" }, facts),
-        ...(p.map?.warnings ?? []).map((w) => el("p", { class: "small warn" }, w)),
+        el("div", { class: "section-head" }, el("span", { class: "who" }, plan.name), el("span", { class: `pill ${p.status}` }, PROPOSAL_STATE[p.status] ?? p.status)),
+        el("p", { class: "muted small" }, `${p.createdBy} · ${ago(Date.parse(p.createdAt))} · Minecraft ${p.minecraft}`),
+        el("p", { class: "notes" }, plan.pitch),
+        el("p", { class: "small" }, baseLine(p)),
+        ...(p.base.kind === "map" ? p.base.warnings.map((w) => el("p", { class: "small warn" }, w)) : []),
+        p.content.length
+          ? el(
+              "ul",
+              { class: "small plan-list" },
+              ...p.content.map((c) =>
+                el(
+                  "li",
+                  {},
+                  el("strong", {}, `${c.title} ${c.version}`),
+                  " ",
+                  el("span", { class: `pill ${c.label === "No install needed" ? "approved" : "building"}` }, c.label),
+                  ` · ${c.requiredBy ? `needed by ${c.requiredBy}` : c.why}${c.license ? ` · ${c.license}` : ""}`,
+                ),
+              ),
+            )
+          : null,
+        p.builds.length
+          ? el("p", { class: "small" }, `Then builds: ${p.builds.map((b) => `${b.name} (${b.steps} step${b.steps === 1 ? "" : "s"}: ${b.kinds.join(", ")})`).join(" → ")}`)
+          : null,
         ...(p.status === "pending" ? crossplayBlock(p, answers) : []),
+        p.result?.note ? el("p", { class: "small" }, `You sent it back: "${p.result.note}"`) : null,
+        p.result?.builds?.length
+          ? el("p", { class: "small" }, `Build steps: ${p.result.builds.map((b) => `${b.name} ${b.ok ? "✓" : `✗ (${b.failed} failed)`}`).join(", ")}`)
+          : null,
         p.result?.error ? el("p", { class: "small risk" }, p.result.error) : null,
         p.status === "pending"
           ? el(
               "div",
-              { class: "row" },
-              button("Approve and build", "primary", async () => {
-                const done = await post(`/api/proposals/${p.id}/approve`, { answers });
-                toast(done.status === "approved" ? `${r.name} is ready. Start it from Worlds.` : `Couldn't build it: ${done.result?.error ?? done.status}`);
-                refresh();
-              }),
-              button("Decline", "danger", async () => {
-                await post(`/api/proposals/${p.id}/decline`);
-                toast("Declined.");
-                refresh();
-              }),
+              { class: "stack" },
+              el(
+                "div",
+                { class: "row" },
+                button("Approve and build", "primary", async () => {
+                  await post(`/api/proposals/${p.id}/approve`, { answers });
+                  toast(`Building ${plan.name}. It shows up in Worlds when it's ready.`);
+                  refresh();
+                }),
+              ),
+              el("label", { class: "field", for: note.id }, "Or send it back to Claude", note),
+              el(
+                "div",
+                { class: "row" },
+                button("Send back", "", async () => {
+                  if (!note.value.trim()) return toast("Write what to change first.");
+                  await post(`/api/proposals/${p.id}/decline`, { note: note.value.trim() });
+                  toast("Sent back. Claude sees your note when it checks the proposal.");
+                  refresh();
+                }),
+                button("Decline", "danger", async () => {
+                  await post(`/api/proposals/${p.id}/decline`);
+                  toast("Declined.");
+                  refresh();
+                }),
+              ),
             )
           : null,
       );
     }),
   );
   if (open.length && location.hash === "#proposals") $("proposals").scrollIntoView();
+}
+
+// ---- saved minigames ---------------------------------------------------------------------------
+async function loadGames() {
+  const games = await api("/api/games");
+  $("games").hidden = games.length === 0;
+  if (!shouldRender("game-list", games)) return;
+  $("game-list").replaceChildren(
+    ...games.map((g) => {
+      const key = g.name;
+      const name = el("input", { id: `gn-${key}`, value: `${g.title} ${new Date().toLocaleDateString(undefined, { month: "short", day: "numeric" })}`.slice(0, 60), maxlength: "60" });
+      const bedrock = el("select", { id: `gb-${key}` }, el("option", { value: "yes" }, "Yes, Bedrock friends too"), el("option", { value: "no" }, "No, Java only"));
+      bedrock.value = g.spec.crossplay?.bedrock === false ? "no" : "yes";
+      const form = el(
+        "div",
+        { class: "stack make", hidden: "" },
+        el("label", { class: "field", for: name.id }, "Name for the copy", name),
+        el("label", { class: "field", for: bedrock.id }, "Will Bedrock players join?", bedrock),
+        button("Make the copy", "primary", async () => {
+          await post(`/api/games/${g.name}/copy`, { name: name.value.trim(), slug: slugify(name.value), bedrock: bedrock.value });
+          toast("Review it under New worlds to review.");
+          await refresh();
+          $("proposals").scrollIntoView({ behavior: "smooth" });
+        }),
+      );
+      let armed = false;
+      const del = button("Delete", "danger", async () => {
+        if (!armed) {
+          armed = true;
+          del.textContent = "Tap again to delete";
+          setTimeout(() => ((armed = false), (del.textContent = "Delete")), 5000);
+          return;
+        }
+        await api(`/api/games/${g.name}`, { method: "DELETE" });
+        toast(`Deleted "${g.title}". Worlds copied from it stay.`);
+        refresh();
+      });
+      return el(
+        "div",
+        { class: "card stack" },
+        el("div", { class: "section-head" }, el("span", { class: "who" }, g.title), el("span", { class: "pill" }, `MC ${g.spec.minecraft.version}`)),
+        g.description ? el("p", { class: "small" }, g.description) : null,
+        el("p", { class: "muted small" }, `Saved from ${g.source} · ${ago(Date.parse(g.createdAt))} · ${mb(g.bytes)}`),
+        el("div", { class: "row" }, button("Make a copy…", "primary", async () => (form.hidden = !form.hidden)), del),
+        form,
+      );
+    }),
+  );
+}
+
+function saveGameBox(w) {
+  const title = el("input", { id: `sg-${w.slug}`, value: w.name, maxlength: "60" });
+  const box = el(
+    "div",
+    { class: "stack make", hidden: "" },
+    el("label", { class: "field", for: title.id }, "Minigame name", title),
+    el("p", { class: "muted small" }, "Saves the map, builds, game setup and plugins. Player inventories and positions aren't saved, so every copy starts fresh."),
+    button("Save minigame", "primary", async () => {
+      const g = await post(`/api/worlds/${w.slug}/save-game`, { name: slugify(title.value).slice(0, 41), title: title.value.trim() });
+      toast(`Saved "${g.title}". Make copies from Saved minigames.`);
+      box.hidden = true;
+      refresh();
+    }),
+  );
+  return box;
 }
 
 // ---- maps ----------------------------------------------------------------------------------
@@ -335,6 +448,21 @@ async function loadWorlds() {
           if (w.state === "online" || w.state === "waking")
             actions.push(button("Put to sleep", "", async () => (await post(`/api/worlds/${w.slug}/stop`), toast(`${w.name} is asleep.`), refresh())));
           if (!w.featured) actions.push(button("Feature", "", async () => (await post(`/api/worlds/${w.slug}/feature`), toast(`Friends now join ${w.name}.`), refresh())));
+          let deleteArmed = false;
+          const deleteBtn = button("Delete world", "danger", async () => {
+            if (!deleteArmed) {
+              deleteArmed = true;
+              deleteBtn.textContent = `Tap again to delete ${w.name}`;
+              setTimeout(() => ((deleteArmed = false), (deleteBtn.textContent = "Delete world")), 5000);
+              return;
+            }
+            deleteBtn.textContent = "Deleting…";
+            await api(`/api/worlds/${w.slug}`, { method: "DELETE", body: JSON.stringify({ confirm: w.slug }) });
+            toast(`Deleted ${w.name}. A final backup was kept.`);
+            refresh();
+          });
+          const saveBox = saveGameBox(w);
+          actions.push(button("Save as minigame…", "", async () => (saveBox.hidden = !saveBox.hidden)));
           const backupBox = el("div", { class: "stack backups", hidden: "" });
           actions.push(
             button("Backups", "", async () => {
@@ -383,6 +511,8 @@ async function loadWorlds() {
             wifiBox,
             accessBox,
             backupBox,
+            saveBox,
+            el("div", { class: "row" }, deleteBtn),
           );
         })),
   );
@@ -680,7 +810,7 @@ async function enableNotifications(me) {
 async function refresh() {
   try {
     await loadPlayers(); // world access controls need the friends list
-    await Promise.all([loadRequests(), loadDeclined(), loadProposals(), loadMaps(), loadWorlds(), loadConnections()]);
+    await Promise.all([loadRequests(), loadDeclined(), loadProposals(), loadGames(), loadMaps(), loadWorlds(), loadConnections()]);
     await loadInvites((await api("/api/worlds")).worlds);
   } catch (e) {
     toast(e.message);

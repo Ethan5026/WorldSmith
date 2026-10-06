@@ -68,3 +68,38 @@ test("view_area needs a place to look and reports offline players", async () => 
   assert.ok(offline.isError);
   assert.match(offline.content[0]!.text!, /isn't online/);
 });
+
+test("propose_world accepts a full plan (base, content, builds) through MCP and lists its schema", async () => {
+  let got: unknown;
+  const services = {
+    worlds: { featuredSlug: () => "lab", spec: () => ({}) },
+    proposals: {
+      proposeWorldPlan: async (plan: unknown) => {
+        got = plan;
+        return { id: 7, status: "pending", minecraft: "26.2", content: [], builds: [{ name: "lobby", steps: 1, kinds: ["sign"] }], crossplay: { badge: "java_bedrock", summary: "ok", questions: [], differences: [] } };
+      },
+    },
+  } as unknown as HubServices;
+  const server = createMcpServer({ ownerName: "Ethan" } as Config, services, "test");
+  const [a, b] = InMemoryTransport.createLinkedPair();
+  await server.connect(a);
+  const client = new Client({ name: "test", version: "1" });
+  await client.connect(b);
+  const tools = await client.listTools();
+  const tool = tools.tools.find((t) => t.name === "propose_world")!;
+  assert.ok(JSON.stringify(tool.inputSchema).includes("saved"), "base kinds are in the schema");
+  const res = (await client.callTool({
+    name: "propose_world",
+    arguments: {
+      name: "OneBlock Duo",
+      slug: "oneblock-duo",
+      pitch: "OneBlock for you (Java) and Sam (Bedrock).",
+      base: { kind: "recipe", recipe: "oneblock" },
+      bedrock: "yes",
+      builds: [{ name: "lobby", origin: [0, 64, 0], ops: [{ op: "sign", at: [0, 0, 0], lines: ["Hi"] }] }],
+    },
+  })) as { isError?: boolean; content: { text?: string }[] };
+  assert.ok(!res.isError, res.content[0]?.text);
+  assert.equal((got as { base: { kind: string } }).base.kind, "recipe");
+  assert.match(res.content[0]!.text!, /"proposal": 7/);
+});

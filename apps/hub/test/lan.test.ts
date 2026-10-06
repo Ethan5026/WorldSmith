@@ -57,3 +57,20 @@ test("the gate routes Wi-Fi ports to their world and hangs up on unused ones", a
   assert.equal(login.action, "kick");
   assert.match(JSON.stringify(login), /Wi-Fi play is off/);
 });
+
+test("deleting a world keeps a final backup, frees its Wi-Fi port and moves the featured world", async () => {
+  const calls: string[] = [];
+  worlds.worker = {
+    status: async (slug: string) => ({ slug, container: "exited", backend: "" }),
+    stop: async () => void calls.push("stop"),
+    backup: async (_slug: string, label: string) => (calls.push(`backup:${label}`), { id: "20261006-000000-before-delete.tar.gz", label, createdAt: "", bytes: 1 }),
+    remove: async (slug: string, purge: boolean) => void calls.push(`remove:${slug}:${purge}`),
+  } as unknown as WorkerClient;
+  worlds.setLan("w0", true);
+  const r = await worlds.remove("w0");
+  assert.equal(r.finalBackup, "20261006-000000-before-delete.tar.gz");
+  assert.deepEqual(calls, ["backup:before-delete", "remove:w0:true"]);
+  assert.equal(worlds.row("w0"), undefined);
+  assert.equal(worlds.slugForLanPort(25570), undefined);
+  assert.equal(worlds.featuredSlug(), "w1", "the next world becomes featured");
+});

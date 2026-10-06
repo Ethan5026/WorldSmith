@@ -18,6 +18,7 @@ import { Backups, isBackupId, type BackupInfo } from "./backups.ts";
 import { renderContainerArea, type RenderInput, type RenderOutput } from "./render.ts";
 import { MapStore } from "./maps.ts";
 import { TemplateLibrary, type TemplateMeta } from "./templates.ts";
+import { SavedGames, type SavedGame } from "./games.ts";
 import type { Vec3 } from "@worldsmith/mcworld";
 
 const MANAGED_LABEL = "worldsmith.world";
@@ -42,10 +43,12 @@ export class WorldRuntime {
   floodgateKey: string | undefined;
   maps: MapStore;
   templates: TemplateLibrary;
+  games: SavedGames;
 
   constructor(opts: { network: string; cacheDir: string; backupsDir: string; mapsDir?: string; floodgateKey?: string; socketPath?: string }) {
     this.maps = new MapStore(opts.mapsDir ?? `${opts.cacheDir}/maps`);
     this.templates = new TemplateLibrary(`${opts.cacheDir}/templates`);
+    this.games = new SavedGames(`${opts.cacheDir}/games`);
     this.floodgateKey = opts.floodgateKey;
     this.docker = new Docker({ socketPath: opts.socketPath ?? "/var/run/docker.sock" });
     this.network = opts.network;
@@ -288,6 +291,33 @@ export class WorldRuntime {
     if (!info) throw new Error(`World ${slug} does not exist`);
     if (info.State.Running) await this.rcon(slug, ["save-all flush"]).catch(() => undefined);
     return this.templates.capture(this.container(slug), { world: slug, ...input });
+  }
+
+  /** Save a world as a reusable minigame (consistent copy: a running world pauses saving briefly). */
+  async saveGame(slug: string, input: Omit<SavedGame, "createdAt" | "bytes" | "source">): Promise<SavedGame> {
+    const info = await this.inspect(slug);
+    if (!info) throw new Error(`World ${slug} does not exist`);
+    const live = info.State.Running && (await this.status(slug)).mc?.online === true;
+    if (live) await this.rcon(slug, ["save-off", "save-all flush"]);
+    try {
+      return await this.games.save(this.container(slug), { ...input, source: slug });
+    } finally {
+      if (live) await this.rcon(slug, ["save-on"]).catch(() => undefined);
+    }
+  }
+
+  /** Fill a brand-new world (never started) with a saved minigame's data. */
+  async installGame(slug: string, name: string): Promise<void> {
+    const info = await this.inspect(slug);
+    if (!info) throw new Error(`World ${slug} does not exist`);
+    if (info.State.Running) throw new Error("Stop the world before installing a saved minigame");
+    try {
+      await this.container(slug).infoArchive({ path: "/data/world/level.dat" });
+      throw new Error(`${slug} already has a world; saved minigames go into new worlds only`);
+    } catch (err) {
+      if ((err as Error).message.includes("already has a world")) throw err;
+    }
+    await this.games.install(this.container(slug), name);
   }
 
   /** Make library templates placeable in a world (worldsmith:<name>_<hash>). */

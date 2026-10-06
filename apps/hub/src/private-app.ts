@@ -202,7 +202,59 @@ export function createPrivateApp(config: Config, db: Db, oauth: OwnerApprovalOAu
     handle(async (req) => {
       const id = z.coerce.number().int().parse(req.params.id);
       const decision = z.enum(["approve", "decline"]).parse(req.params.decision);
-      return decision === "approve" ? services.proposals.approve(id, (req.body ?? {}).answers, { wait: false }) : services.proposals.decline(id);
+      if (decision === "approve") return services.proposals.approve(id, (req.body ?? {}).answers, { wait: false });
+      const { note } = z.object({ note: z.string().max(1000).optional() }).parse(req.body ?? {});
+      return services.proposals.decline(id, note?.trim() || undefined);
+    }),
+  );
+
+  // Deleting a world is an owner-only portal action (Claude can't delete worlds).
+  app.delete(
+    "/api/worlds/:slug",
+    csrf,
+    handle(async (req) => {
+      const slug = Slug.parse(req.params.slug);
+      const { confirm } = z.object({ confirm: z.string() }).parse(req.body ?? {});
+      if (confirm !== slug) throw new Error("Confirmation didn't match the world.");
+      return worlds.remove(slug);
+    }),
+  );
+
+  // ---- saved minigames ----
+  const GameName = z.string().regex(/^[a-z0-9][a-z0-9-]{1,40}$/);
+  app.get("/api/games", handle(() => services.worker.listGames()));
+  app.post(
+    "/api/worlds/:slug/save-game",
+    csrf,
+    handle(async (req) => {
+      const body = z.object({ name: GameName, title: z.string().min(1).max(60), description: z.string().max(500).optional() }).parse(req.body);
+      return worlds.saveAsGame(Slug.parse(req.params.slug), body);
+    }),
+  );
+  app.delete(
+    "/api/games/:name",
+    csrf,
+    handle(async (req) => {
+      const name = GameName.parse(req.params.name);
+      await services.worker.deleteGame(name);
+      audit(db, "minigame_deleted", { name });
+    }),
+  );
+  app.post(
+    "/api/games/:name/copy",
+    csrf,
+    handle((req) => {
+      const body = z.object({ slug: Slug, name: z.string().min(1).max(60), bedrock: z.enum(["yes", "no"]) }).parse(req.body);
+      return services.proposals.proposeWorldPlan(
+        {
+          name: body.name,
+          slug: body.slug,
+          pitch: `A fresh copy of the saved minigame "${GameName.parse(req.params.name)}".`,
+          base: { kind: "saved", game: req.params.name },
+          bedrock: body.bedrock,
+        },
+        "owner (portal)",
+      );
     }),
   );
 

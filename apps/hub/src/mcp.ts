@@ -11,7 +11,7 @@ import type { Config } from "./config.ts";
 import type { HubServices } from "./services.ts";
 import { audit } from "./db.ts";
 import { checkBlockState, checkGamerule, LEGACY_GAMERULES, loadVersion, type McVersionData } from "@worldsmith/mcdata";
-import { BuildScript, TemplateName } from "@worldsmith/core";
+import { BuildScript, TemplateName, WorldPlan } from "@worldsmith/core";
 import { WorldFromMap } from "./proposals.ts";
 import type { MapReport } from "./worker-client.ts";
 
@@ -64,7 +64,9 @@ export function createMcpServer(config: Config, services: HubServices, clientId?
         "You may change anything inside the worlds right away: run console commands, op players, change gamemodes, " +
         "gamerules, time and weather, and start or stop worlds. You cannot let new people in or delete worlds: new people " +
         "ask by trying to join, and the owner approves them in the WorldSmith portal. New worlds from public maps: " +
-        "import_map (or the owner uploads the zip), then propose_world_from_map; the owner approves in the portal. " +
+        "import_map (or the owner uploads the zip), then propose_world (or the shortcut propose_world_from_map); the owner " +
+        "approves in the portal. Whole world ideas (base + plugins + builds) go in one propose_world plan; finished " +
+        "games can be kept with save_minigame and copied later. " +
         "Commands run as the server console, so use player names or selectors instead of ~ coordinates relative to you. " +
         "Minecraft 26.x differs from older versions you may remember: game rules are snake_case and some were renamed " +
         "(keep_inventory, advance_time, spawn_mobs; pvp is a game rule) — check minecraft_reference; text components in " +
@@ -417,8 +419,118 @@ export function createMcpServer(config: Config, services: HubServices, clientId?
     },
     async ({ id }) => {
       const v = await services.proposals.get(id);
-      return json({ id: v.id, title: v.title, status: v.status, world: v.result?.slug, error: v.result?.error });
+      return json({
+        id: v.id,
+        title: v.title,
+        status: v.status,
+        world: v.result?.slug,
+        error: v.result?.error,
+        ownerNote: v.result?.note,
+        builds: v.result?.builds,
+        next:
+          v.status === "declined" && v.result?.note
+            ? "The owner sent this back with a note: revise the plan and propose it again."
+            : v.status === "approved"
+              ? "The world exists (asleep). Use view_area to look at it and build to change it."
+              : undefined,
+      });
     },
+  );
+
+  server.registerTool(
+    "search_catalog",
+    {
+      title: "Search plugins, mods and datapacks",
+      description:
+        "Search Modrinth for content that has a build for the given Minecraft version (default: the version WorldSmith " +
+        "runs, 26.2). Plugins work on Paper worlds (all current recipes); datapacks work everywhere; mods need a modded " +
+        "base. Results say whether friends must install anything. Use the project slug in a world plan's content.",
+      inputSchema: {
+        query: z.string().min(2).max(100),
+        kind: z.enum(["plugin", "datapack", "mod"]).default("plugin"),
+        minecraft: z.string().regex(/^\d+(\.\d+){1,2}$/).default("26.2"),
+        limit: z.number().int().min(1).max(20).default(8),
+      },
+      annotations: { readOnlyHint: true },
+    },
+    async ({ query, kind, minecraft, limit }) => json(await services.proposals.catalog.search(query, kind, minecraft, limit)),
+  );
+
+  server.registerTool(
+    "propose_world",
+    {
+      title: "Propose a world plan",
+      description:
+        "Propose a whole new world in one card the owner approves once: a base (a recipe from list_recipes, a downloaded " +
+        "map from list_maps, or a saved minigame from list_minigames), extra Modrinth content (search_catalog; versions " +
+        "and dependencies are resolved and hash-pinned for you), settings, game rules, and build steps (same format as " +
+        "the build tool: lobbies, templates, voxels, hunger_games…) that run right after the world is created. " +
+        "Everything is checked first; if something needs fixing you get the list and nothing is filed. Relay the " +
+        "crossplay summary to the owner when Bedrock players may join; the portal asks them the texture/behavior " +
+        "questions. Then watch proposal_status: the owner may approve, decline, or send it back with a note.",
+      inputSchema: WorldPlan.shape,
+    },
+    async (args) => {
+      const v = await services.proposals.proposeWorldPlan(args, `Claude (${clientId ?? "connector"})`);
+      return json({
+        proposal: v.id,
+        status: v.status,
+        minecraft: v.minecraft,
+        content: v.content.map((c) => `${c.title} ${c.version} · ${c.label}${c.requiredBy ? ` (needed by ${c.requiredBy})` : ""}`),
+        builds: v.builds,
+        crossplay: {
+          badge: v.crossplay.badge,
+          summary: v.crossplay.summary,
+          questionsForOwner: v.crossplay.questions.map((q) => q.prompt),
+          differences: v.crossplay.differences.map((d) => `${d.feature}: Java: ${d.java} Bedrock: ${d.bedrock}`),
+        },
+        next: "The owner was notified and decides in the WorldSmith portal. Use proposal_status to see the outcome.",
+      });
+    },
+  );
+
+  server.registerTool(
+    "save_minigame",
+    {
+      title: "Save a world as a minigame",
+      description:
+        "Save a world as a reusable minigame: the map, builds, game kits, plugins and their settings. Player data and " +
+        "access lists are left out, so every copy starts fresh. Copies are made with propose_world using base " +
+        "{kind: 'saved', game: <name>} (the owner approves each copy). Saving under an existing name replaces it.",
+      inputSchema: {
+        slug: slugArg,
+        name: z.string().regex(/^[a-z0-9][a-z0-9-]{1,40}$/).describe("Short id, e.g. disney-hunger-games"),
+        title: z.string().min(1).max(60),
+        description: z.string().max(500).optional(),
+      },
+    },
+    async ({ slug, name, title, description }) => {
+      const s = resolve(slug);
+      const g = await worlds.saveAsGame(s, { name, title, description });
+      return json({ name: g.name, title: g.title, savedFrom: g.source, sizeMb: Math.max(1, Math.round(g.bytes / 1024 / 1024)) });
+    },
+  );
+
+  server.registerTool(
+    "list_minigames",
+    {
+      title: "List saved minigames",
+      description: "Saved minigames that can be copied into new worlds.",
+      inputSchema: {},
+      annotations: { readOnlyHint: true },
+    },
+    async () =>
+      json(
+        (await services.worker.listGames()).map((g) => ({
+          name: g.name,
+          title: g.title,
+          description: g.description,
+          savedFrom: g.source,
+          savedAt: g.createdAt,
+          minecraft: g.spec.minecraft.version,
+          sizeMb: Math.max(1, Math.round(g.bytes / 1024 / 1024)),
+        })),
+      ),
   );
 
   server.registerTool(

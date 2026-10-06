@@ -16,6 +16,33 @@ const EXCLUDE = [
   /(^|\/)session\.lock$/,
 ];
 const KEEP = 15;
+
+/** Gzipped tar of a container's /data, minus regenerated files and anything matching `skip`. */
+export async function archiveData(container: Docker.Container, file: string, skip: RegExp[] = []): Promise<void> {
+  const tmp = `${file}.partial`;
+  const source = (await container.getArchive({ path: "/data" })) as NodeJS.ReadableStream;
+  const ex = extract();
+  const out = pack();
+  ex.on("entry", (header, stream, next) => {
+    if ([...EXCLUDE, ...skip].some((re) => re.test(header.name))) {
+      stream.on("end", next);
+      stream.resume();
+      return;
+    }
+    stream.pipe(out.entry(header, next));
+  });
+  ex.on("finish", () => out.finalize());
+  ex.on("error", (e) => out.destroy(e));
+  source.pipe(ex);
+  await pipeline(out, createGzip({ level: 6 }), createWriteStream(tmp));
+  renameSync(tmp, file);
+}
+
+/** Unpack an archive made by archiveData into a container (it lands in /data). */
+export async function unpackArchive(container: Docker.Container, file: string): Promise<void> {
+  statSync(file); // throws if missing
+  await container.putArchive(createReadStream(file).pipe(createGunzip()), { path: "/" });
+}
 const ID_RE = /^\d{8}-\d{6}-[a-z0-9-]{1,32}\.tar\.gz$/;
 
 export interface BackupInfo {
@@ -68,25 +95,7 @@ export class Backups {
         .slice(0, 32) || "manual";
     const stamp = new Date().toISOString().replace(/[-:]/g, "").replace("T", "-").slice(0, 15);
     const id = `${stamp}-${safeLabel}.tar.gz`;
-    const final = path.join(this.dir(slug), id);
-    const tmp = `${final}.partial`;
-
-    const source = (await container.getArchive({ path: "/data" })) as NodeJS.ReadableStream;
-    const ex = extract();
-    const out = pack();
-    ex.on("entry", (header, stream, next) => {
-      if (EXCLUDE.some((re) => re.test(header.name))) {
-        stream.on("end", next);
-        stream.resume();
-        return;
-      }
-      stream.pipe(out.entry(header, next));
-    });
-    ex.on("finish", () => out.finalize());
-    ex.on("error", (e) => out.destroy(e));
-    source.pipe(ex);
-    await pipeline(out, createGzip({ level: 6 }), createWriteStream(tmp));
-    renameSync(tmp, final);
+    await archiveData(container, path.join(this.dir(slug), id));
     this.prune(slug);
     return this.list(slug).find((b) => b.id === id)!;
   }
@@ -98,8 +107,6 @@ export class Backups {
   /** Unpack a backup into the container's (empty) /data. */
   async unpack(container: Docker.Container, slug: string, id: string): Promise<void> {
     if (!ID_RE.test(id)) throw new Error("Not a backup id");
-    const file = path.join(this.dir(slug), id);
-    statSync(file); // throws if missing
-    await container.putArchive(createReadStream(file).pipe(createGunzip()), { path: "/" });
+    await unpackArchive(container, path.join(this.dir(slug), id));
   }
 }

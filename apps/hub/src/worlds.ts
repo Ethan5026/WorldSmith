@@ -1,9 +1,9 @@
 // Worlds: create from recipes, start/stop, the featured world, wake-on-join and idle sleep.
 
 import { randomBytes } from "node:crypto";
-import { instantiateRecipe, loadRecipes, WorldProperties, WorldSpec, type Recipe } from "@worldsmith/core";
+import { instantiateRecipe, loadRecipes, WorldProperties, WorldSpec, type Recipe, type WorldFile } from "@worldsmith/core";
 import { audit, type Db } from "./db.ts";
-import type { BackupInfo, MapReport, WorkerClient, WorkerWorldStatus } from "./worker-client.ts";
+import type { BackupInfo, MapReport, SavedGame, WorkerClient, WorkerWorldStatus } from "./worker-client.ts";
 import type { AccessService } from "./access.ts";
 
 export interface WorldRow {
@@ -22,6 +22,23 @@ export interface WorldRow {
 export const LAN_PORTS = Array.from({ length: 10 }, (_, i) => 25570 + i);
 
 const PERIODIC_BACKUP_MS = 6 * 60 * 60 * 1000;
+
+/** What a world plan adds on top of its base: settings, game rules, pinned content, Bedrock choice. */
+export interface PlanExtras {
+  properties?: WorldProperties;
+  gamerules?: Record<string, boolean | number>;
+  files?: WorldFile[];
+  bedrock?: boolean;
+}
+
+function withExtras(spec: WorldSpec, extras: PlanExtras): WorldSpec {
+  return WorldSpec.parse({
+    ...spec,
+    files: [...spec.files, ...(extras.files ?? [])],
+    gamerules: { ...spec.gamerules, ...extras.gamerules },
+    crossplay: extras.bedrock === undefined ? spec.crossplay : { bedrock: extras.bedrock },
+  });
+}
 
 export type WorldState = "asleep" | "waking" | "online" | "missing" | "error";
 
@@ -101,11 +118,11 @@ export class WorldService {
   }
 
   /** Create a world from a recipe and set it up on the worker (doesn't start it). */
-  async createFromRecipe(recipeId: string, slug: string, name: string): Promise<WorldView> {
+  async createFromRecipe(recipeId: string, slug: string, name: string, extras: PlanExtras = {}): Promise<WorldView> {
     const recipe = this.recipes.get(recipeId);
     if (!recipe) throw new Error(`No recipe called "${recipeId}". Available: ${[...this.recipes.keys()].join(", ")}`);
     if (this.row(slug)) throw new Error(`A world called "${slug}" already exists.`);
-    const spec = instantiateRecipe(recipe, { slug, name });
+    const spec = withExtras(instantiateRecipe(recipe, { slug, name, properties: extras.properties }), extras);
     this.db
       .prepare("INSERT INTO worlds (slug, name, recipe, spec, created_at) VALUES (?, ?, ?, ?, ?)")
       .run(slug, name, recipeId, JSON.stringify(spec), Date.now());
@@ -124,7 +141,7 @@ export class WorldService {
   async createFromMap(
     report: MapReport,
     root: string,
-    opts: { slug: string; name: string; bedrock: boolean; gamemode?: WorldProperties["gamemode"]; difficulty?: WorldProperties["difficulty"] },
+    opts: { slug: string; name: string; bedrock: boolean; gamemode?: WorldProperties["gamemode"]; difficulty?: WorldProperties["difficulty"] } & PlanExtras,
   ): Promise<WorldView> {
     const map = report.worlds.find((w) => w.root === root);
     if (!map) throw new Error(`That import has no world at "${root}".`);
@@ -140,8 +157,10 @@ export class WorldService {
         gamemode: opts.gamemode ?? (map.gameMode === "spectator" ? "adventure" : map.gameMode),
         difficulty: opts.difficulty ?? (difficulty.success ? difficulty.data : undefined),
         hardcore: map.hardcore,
+        ...opts.properties,
       },
     });
+    Object.assign(spec, withExtras(spec, { ...opts, properties: undefined }));
     spec.crossplay = { bedrock: opts.bedrock };
     spec.upgradeWorld = map.needsUpgrade;
     this.db
@@ -181,6 +200,57 @@ export class WorldService {
     }
     audit(this.db, "map_upgraded", { slug });
     await this.stop(slug, "map upgrade finished");
+  }
+
+  /**
+   * Delete a world (owner only, from the portal). A final backup is kept on the worker, so it can be
+   * brought back by an admin; the container, volume and the hub's records are removed.
+   */
+  async remove(slug: string): Promise<{ finalBackup?: string }> {
+    const spec = this.spec(slug);
+    const s = await this.worker.status(slug).catch(() => undefined);
+    if (s?.container === "running") await this.worker.stop(slug);
+    let finalBackup: string | undefined;
+    if (s && s.container !== "missing") finalBackup = (await this.worker.backup(slug, "before-delete")).id;
+    await this.worker.remove(slug, true);
+    this.db.prepare("DELETE FROM world_members WHERE world_slug = ?").run(slug);
+    this.db.prepare("DELETE FROM worlds WHERE slug = ?").run(slug);
+    if (this.featuredSlug() === slug) {
+      const next = this.rows()[0]?.slug;
+      if (next) this.setFeatured(next);
+      else this.db.prepare("DELETE FROM settings WHERE key = 'featured_world'").run();
+    }
+    this.statusCache.delete(slug);
+    this.waking.delete(slug);
+    audit(this.db, "world_deleted", { slug, name: spec.name, finalBackup: finalBackup ?? null });
+    return { finalBackup };
+  }
+
+  /** Save a world as a reusable minigame (snapshot + its spec). */
+  async saveAsGame(slug: string, game: { name: string; title: string; description?: string }): Promise<SavedGame> {
+    const saved = await this.worker.saveGame(slug, { ...game, spec: this.spec(slug) });
+    audit(this.db, "minigame_saved", { slug, name: game.name });
+    return saved;
+  }
+
+  /** Create a fresh, independent world from a saved minigame. Doesn't start it. */
+  async createFromSaved(game: SavedGame, slug: string, name: string, extras: PlanExtras = {}): Promise<WorldView> {
+    if (this.row(slug)) throw new Error(`A world called "${slug}" already exists.`);
+    const spec = withExtras(WorldSpec.parse({ ...game.spec, slug, name, upgradeWorld: false, properties: { ...game.spec.properties, motd: name, ...extras.properties } }), extras);
+    this.db
+      .prepare("INSERT INTO worlds (slug, name, recipe, spec, created_at) VALUES (?, ?, ?, ?, ?)")
+      .run(slug, name, spec.recipe ?? null, JSON.stringify(spec), Date.now());
+    try {
+      await this.worker.apply(spec, randomBytes(24).toString("base64url"), this.access.accessFiles(slug));
+      await this.worker.installGame(slug, game.name);
+    } catch (err) {
+      this.db.prepare("DELETE FROM worlds WHERE slug = ?").run(slug);
+      await this.worker.remove(slug, true).catch(() => undefined);
+      throw err;
+    }
+    if (!this.featuredSlug()) this.setFeatured(slug);
+    audit(this.db, "world_created", { slug, from: "saved_game", game: game.name });
+    return this.view(slug);
   }
 
   /** Adopt a world that already exists on the worker (created before the hub tracked it). */

@@ -85,3 +85,10 @@ One build step sets up a whole game: a `worldsmith_game` datapack (loot tables `
 - Grace period: `gamerule pvp false`, then `pvp true` + `worldborder set <final> <N>s`.
 - Reset forceloads the arena, waits 3 s (`schedule`), refills every chest, and unloads it again.
 - Verified: datapack enabled by `reload`, 10/10 hidden barrels placed with loot tables, clock ticking (20/s), countdown → GO → end with no players, reset.
+
+## World plans and saved minigames (Phase 2C)
+
+- **`propose_world`** files one card for a whole world: base (recipe, downloaded map, or saved minigame), Modrinth content (resolved for the base's Minecraft version and server type, newest release, sha512-pinned, required dependencies pulled in), settings, game rules, and build steps. Everything is checked before anything is filed; problems come back as a list. Approval creates the world, runs an old map's upgrade boot, runs each build step, and puts the world to sleep. The owner can also **send a plan back with a note** that Claude reads via `proposal_status`.
+- Install labels come from Modrinth's client/server sides: a client-required mod is "Friends install pack" (and Bedrock can't join); server plugins and datapacks are "No install needed". Plugins default to Bedrock "approximate" (menus/custom items may differ) unless Claude states otherwise.
+- **Saved minigames**: snapshot of a world's data + spec (no player data, access lists, logs or jars), stored on the worker. "Make a copy" proposes a plan with a `saved` base; each copy is an independent world. Verified live: the lab (lobbies, cottage, Hunger Games kit) saved, copied, booted, and its Start button ran.
+- Worlds can now be deleted from the portal (two taps; owner only); a `before-delete` backup is kept on the worker.

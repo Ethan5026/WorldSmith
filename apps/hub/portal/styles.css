@@ -131,3 +131,5 @@ select {
 progress { width: 100%; accent-color: var(--accent); }
 /* iOS Safari zooms the page when a focused control's text is under 16px. */
 select, input, textarea, .field select, .field input, .make input { font-size: 16px; }
+.plan-list { margin: 0; padding-left: 18px; display: grid; gap: 6px; }
+textarea { font: inherit; font-size: 16px; color: var(--ink); background: var(--ground); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; resize: vertical; }

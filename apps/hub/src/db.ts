@@ -128,7 +128,7 @@ export function openDb(dataDir: string): Db {
     -- Things Claude suggests that only the owner can approve (new worlds), decided in the portal.
     CREATE TABLE IF NOT EXISTS proposals (
       id          INTEGER PRIMARY KEY AUTOINCREMENT,
-      kind        TEXT NOT NULL CHECK (kind IN ('world_from_map')),
+      kind        TEXT NOT NULL CHECK (kind IN ('world_from_map','world_plan')),
       title       TEXT NOT NULL,
       payload     TEXT NOT NULL,
       status      TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','building','approved','declined','failed')),
@@ -149,6 +149,28 @@ export function openDb(dataDir: string): Db {
   addColumn(db, "worlds", "last_backup_at", "last_backup_at INTEGER");
   addColumn(db, "worlds", "lan_port", "lan_port INTEGER");
   addColumn(db, "worlds", "access_mode", "access_mode TEXT NOT NULL DEFAULT 'everyone' CHECK (access_mode IN ('everyone','picked'))");
+  // Proposals created before world plans only allowed kind 'world_from_map': rebuild the table.
+  const proposalsSql = (db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'proposals'").get() as { sql: string } | undefined)?.sql ?? "";
+  if (!proposalsSql.includes("world_plan")) {
+    db.exec(`
+      BEGIN;
+      ALTER TABLE proposals RENAME TO proposals_old;
+      CREATE TABLE proposals (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        kind        TEXT NOT NULL CHECK (kind IN ('world_from_map','world_plan')),
+        title       TEXT NOT NULL,
+        payload     TEXT NOT NULL,
+        status      TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','building','approved','declined','failed')),
+        created_by  TEXT NOT NULL,
+        created_at  INTEGER NOT NULL,
+        decided_at  INTEGER,
+        result      TEXT
+      );
+      INSERT INTO proposals SELECT * FROM proposals_old;
+      DROP TABLE proposals_old;
+      COMMIT;
+    `);
+  }
   return db;
 }
 

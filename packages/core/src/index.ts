@@ -1,5 +1,6 @@
 export * from "./crossplay.ts";
 export * from "./games.ts";
+export * from "./plan.ts";
 export * from "./world.ts";
 export * from "./recipes.ts";
 export * from "./datapack.ts";
