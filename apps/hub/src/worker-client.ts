@@ -80,6 +80,20 @@ export interface MapReport {
   warnings: string[];
 }
 
+export interface TemplateMeta {
+  name: string;
+  description?: string;
+  hash: string;
+  id: string;
+  size: [number, number, number];
+  blocks: number;
+  blockEntities: number;
+  top: [string, number][];
+  source?: { world: string; dimension: string; from: [number, number, number]; to: [number, number, number] };
+  createdAt: string;
+  missingChunks?: number;
+}
+
 export class WorkerClient {
   base: URL;
   token: string;
@@ -161,6 +175,18 @@ export class WorkerClient {
   }
   installMap(slug: string, id: string, root: string): Promise<{ files: number; bytes: number }> {
     return this.call("POST", `/worlds/${slug}/install-map`, { id, root }, 900_000);
+  }
+  listTemplates(): Promise<TemplateMeta[]> {
+    return this.call("GET", "/templates");
+  }
+  captureTemplate(
+    slug: string,
+    input: { name: string; from: [number, number, number]; to: [number, number, number]; dimension?: string; description?: string; dataVersion: number },
+  ): Promise<TemplateMeta> {
+    return this.call("POST", `/worlds/${slug}/templates/capture`, input, 300_000);
+  }
+  installTemplates(slug: string, names: string[]): Promise<{ name: string; id: string; size: [number, number, number] }[]> {
+    return this.call("POST", `/worlds/${slug}/templates/install`, { names }, 120_000);
   }
   render(slug: string, req: RenderRequest): Promise<RenderResponse> {
     return this.call("POST", `/worlds/${slug}/render`, req, 120_000);

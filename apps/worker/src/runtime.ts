@@ -17,6 +17,8 @@ import { buildTar, resolveFile, type ResolvedFile } from "./files.ts";
 import { Backups, isBackupId, type BackupInfo } from "./backups.ts";
 import { renderContainerArea, type RenderInput, type RenderOutput } from "./render.ts";
 import { MapStore } from "./maps.ts";
+import { TemplateLibrary, type TemplateMeta } from "./templates.ts";
+import type { Vec3 } from "@worldsmith/mcworld";
 
 const MANAGED_LABEL = "worldsmith.world";
 const RCON_PORT = 25575;
@@ -39,9 +41,11 @@ export class WorldRuntime {
   backups: Backups;
   floodgateKey: string | undefined;
   maps: MapStore;
+  templates: TemplateLibrary;
 
   constructor(opts: { network: string; cacheDir: string; backupsDir: string; mapsDir?: string; floodgateKey?: string; socketPath?: string }) {
     this.maps = new MapStore(opts.mapsDir ?? `${opts.cacheDir}/maps`);
+    this.templates = new TemplateLibrary(`${opts.cacheDir}/templates`);
     this.floodgateKey = opts.floodgateKey;
     this.docker = new Docker({ socketPath: opts.socketPath ?? "/var/run/docker.sock" });
     this.network = opts.network;
@@ -273,6 +277,24 @@ export class WorldRuntime {
     }
     if (hasWorld) throw new Error(`${slug} already has a world; maps go into new worlds only`);
     return this.maps.install(id, root, this.container(slug));
+  }
+
+  /** Save a box of a world into the template library (a running world saves to disk first). */
+  async captureTemplate(
+    slug: string,
+    input: { name: string; from: Vec3; to: Vec3; dimension: string; description?: string; dataVersion: number },
+  ): Promise<TemplateMeta> {
+    const info = await this.inspect(slug);
+    if (!info) throw new Error(`World ${slug} does not exist`);
+    if (info.State.Running) await this.rcon(slug, ["save-all flush"]).catch(() => undefined);
+    return this.templates.capture(this.container(slug), { world: slug, ...input });
+  }
+
+  /** Make library templates placeable in a world (worldsmith:<name>_<hash>). */
+  async installTemplates(slug: string, names: string[]): Promise<{ name: string; id: string; size: Vec3 }[]> {
+    const files = names.map((n) => this.templates.installFile(n));
+    await this.putFiles(slug, files.map((f) => ({ kind: "inline" as const, encoding: "base64" as const, path: f.path, content: f.base64 })));
+    return files.map((f) => ({ name: f.meta.name, id: f.meta.id, size: f.meta.size }));
   }
 
   /** Top-down map of an area. Running worlds save first so the picture includes recent changes. */

@@ -34,6 +34,8 @@ export function readRegionChunk(region: Buffer, cx: number, cz: number): NbtComp
 
 interface Section {
   palette: string[];
+  /** Full block states, e.g. "minecraft:oak_stairs[facing=north,half=bottom]" (same order as palette). */
+  states: string[];
   data?: BigInt64Array;
   bits: number;
   /** Palette index per block (y*256 + z*16 + x), decoded on first use. */
@@ -48,7 +50,10 @@ export interface ChunkView {
   surface?: Int16Array;
   /** Chests, signs, command blocks… with absolute x/y/z. */
   blockEntities: NbtCompound[];
+  /** Block name at chunk-local x/z and absolute y. */
   blockAt(x: number, y: number, z: number): string;
+  /** Full block state ("name[prop=value,…]") at chunk-local x/z and absolute y. */
+  stateAt(x: number, y: number, z: number): string;
 }
 
 function unpackAll(longs: BigInt64Array, bits: number, count: number): Uint16Array {
@@ -91,8 +96,14 @@ export function decodeChunk(root: NbtCompound): ChunkView {
     const y = nbt.num(sec.Y);
     const states = nbt.compound(sec.block_states);
     if (y === undefined || !states) continue;
-    const palette = nbt.list(states.palette).map((p) => nbt.str(nbt.compound(p)?.Name) ?? "minecraft:air");
-    sections.set(y, { palette, data: nbt.longs(states.data), bits: Math.max(4, Math.ceil(Math.log2(palette.length))) });
+    const entries = nbt.list(states.palette).map((p) => nbt.compound(p));
+    const palette = entries.map((p) => nbt.str(p?.Name) ?? "minecraft:air");
+    const full = entries.map((p, i) => {
+      const props = nbt.compound(p?.Properties);
+      const kv = props ? Object.entries(props).map(([k, v]) => `${k}=${nbt.str(v) ?? ""}`) : [];
+      return kv.length ? `${palette[i]}[${kv.join(",")}]` : palette[i]!;
+    });
+    sections.set(y, { palette, states: full, data: nbt.longs(states.data), bits: Math.max(4, Math.ceil(Math.log2(palette.length))) });
   }
 
   let surface: Int16Array | undefined;
@@ -106,6 +117,15 @@ export function decodeChunk(root: NbtCompound): ChunkView {
     for (let i = 0; i < 256; i++) surface[i] = minY + unpack(hm, bits, i) - 1;
   }
 
+  const lookup = (x: number, y: number, z: number, which: "palette" | "states"): string => {
+    const sec = sections.get(Math.floor(y / 16));
+    if (!sec || sec.palette.length === 0) return "minecraft:air";
+    const list = sec[which];
+    if (!sec.data || list.length === 1) return list[0]!;
+    sec.indexes ??= unpackAll(sec.data, sec.bits, 4096);
+    return list[sec.indexes[((y & 15) << 8) | ((z & 15) << 4) | (x & 15)]!] ?? "minecraft:air";
+  };
+
   return {
     x: cx,
     z: cz,
@@ -113,11 +133,10 @@ export function decodeChunk(root: NbtCompound): ChunkView {
     surface,
     blockEntities: nbt.list(root.block_entities).map((b) => nbt.compound(b)).filter((b): b is NbtCompound => b !== undefined),
     blockAt(x, y, z) {
-      const sec = sections.get(Math.floor(y / 16));
-      if (!sec || sec.palette.length === 0) return "minecraft:air";
-      if (!sec.data || sec.palette.length === 1) return sec.palette[0]!;
-      sec.indexes ??= unpackAll(sec.data, sec.bits, 4096);
-      return sec.palette[sec.indexes[((y & 15) << 8) | ((z & 15) << 4) | (x & 15)]!] ?? "minecraft:air";
+      return lookup(x, y, z, "palette");
+    },
+    stateAt(x, y, z) {
+      return lookup(x, y, z, "states");
     },
   };
 }

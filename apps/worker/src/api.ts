@@ -93,6 +93,33 @@ export function createWorkerApp(runtime: WorldRuntime, token: string): express.E
       return runtime.render(slugOf(req), input);
     }),
   );
+  // ---- structure templates ----
+  const Vec = z.tuple([z.number().int(), z.number().int(), z.number().int()]);
+  app.get("/templates", handle(async () => runtime.templates.list()));
+  app.post(
+    "/worlds/:slug/templates/capture",
+    handle(async (req) => {
+      const input = z
+        .object({
+          name: z.string().regex(/^[a-z0-9][a-z0-9_-]{0,40}$/),
+          from: Vec,
+          to: Vec,
+          dimension: z.string().regex(/^([a-z0-9_.-]+:)?[a-z0-9_.-]+$/).default("minecraft:overworld"),
+          description: z.string().max(300).optional(),
+          dataVersion: z.number().int().positive(),
+        })
+        .parse(req.body);
+      return runtime.captureTemplate(slugOf(req), input);
+    }),
+  );
+  app.post(
+    "/worlds/:slug/templates/install",
+    handle(async (req) => {
+      const { names } = z.object({ names: z.array(z.string().regex(/^[a-z0-9][a-z0-9_-]{0,40}$/)).min(1).max(50) }).parse(req.body);
+      return runtime.installTemplates(slugOf(req), names);
+    }),
+  );
+
   // ---- public maps ----
   app.get("/maps", handle(async () => runtime.maps.list()));
   app.get("/maps/:id", handle(async (req) => runtime.maps.get(MapId.parse(req.params.id))));

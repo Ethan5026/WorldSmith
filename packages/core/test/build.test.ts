@@ -90,3 +90,30 @@ test("builds can't touch access or server control", () => {
 test("SNBT strings escape quotes and backslashes", () => {
   assert.equal(snbtString('a"b\\c'), '"a\\"b\\\\c"');
 });
+
+test("template op: places the hashed library id, rotated, and needs a saved template", () => {
+  const templates = new Map([["lobby", { id: "worldsmith:lobby_1e40a526fd", size: [15, 6, 15] as [number, number, number] }]]);
+  const ok = compileBuild({ name: "t", origin: [100, -61, 60], ops: [{ op: "template", name: "lobby", at: [0, 0, 0], rotation: "clockwise_90", mirror: "none" }] }, undefined, { templates });
+  assert.deepEqual(ok.errors, []);
+  assert.deepEqual(ok.commands, ["place template worldsmith:lobby_1e40a526fd 100 -61 60 clockwise_90 none"]);
+  assert.deepEqual(ok.templates, ["lobby"]);
+  assert.deepEqual(ok.bounds, { min: [85, -61, 45], max: [115, -56, 75] }, "bounds cover every rotation");
+  const missing = compileBuild({ name: "t", origin: [0, 0, 0], ops: [{ op: "template", name: "arena", at: [0, 0, 0], rotation: "none", mirror: "none" }] }, undefined, { templates });
+  assert.match(missing.errors[0]!, /no template called "arena". Saved templates: lobby/);
+});
+
+test("voxels op: one structure file per drawing, placed at its corner", () => {
+  const r = compileBuild({
+    name: "t",
+    origin: [10, 0, 10],
+    ops: [{ op: "voxels", at: [1, 1, 1], legend: { "#": "stone", G: "glass" }, layers: [["##", "##"], ["G.", ".G"]] }],
+  });
+  assert.deepEqual(r.errors, []);
+  assert.equal(r.files.length, 1);
+  assert.match(r.files[0]!.path, /^world\/generated\/worldsmith\/structure\/build_[0-9a-f]{10}\.nbt$/);
+  const name = r.files[0]!.path.split("/").pop()!.replace(".nbt", "");
+  assert.deepEqual(r.commands, [`place template worldsmith:${name} 11 1 11`]);
+  assert.deepEqual(r.bounds, { min: [11, 1, 11], max: [12, 2, 12] });
+  const bad = compileBuild({ name: "t", origin: [0, 0, 0], ops: [{ op: "voxels", at: [0, 0, 0], legend: { "#": "stone" }, layers: [["#?"]] }] });
+  assert.match(bad.errors[0]!, /missing from the legend: "\?"/);
+});

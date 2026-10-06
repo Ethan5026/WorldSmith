@@ -9,6 +9,7 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY packages/mcproto/package.json packages/mcproto/
 COPY packages/mcdata/package.json packages/mcdata/
 COPY packages/core/package.json packages/core/
+COPY packages/mcworld/package.json packages/mcworld/
 COPY apps/hub/package.json apps/hub/
 RUN pnpm install --frozen-lockfile --prod --filter "@worldsmith/hub..."
 
@@ -16,6 +17,7 @@ COPY packages/mcproto/src packages/mcproto/src
 COPY packages/mcdata/src packages/mcdata/src
 COPY packages/mcdata/versions packages/mcdata/versions
 COPY packages/core/src packages/core/src
+COPY packages/mcworld/src packages/mcworld/src
 COPY apps/hub/src apps/hub/src
 COPY apps/hub/portal apps/hub/portal
 COPY recipes recipes

@@ -11,7 +11,7 @@ import type { Config } from "./config.ts";
 import type { HubServices } from "./services.ts";
 import { audit } from "./db.ts";
 import { checkBlockState, checkGamerule, LEGACY_GAMERULES, loadVersion, type McVersionData } from "@worldsmith/mcdata";
-import { BuildScript } from "@worldsmith/core";
+import { BuildScript, TemplateName } from "@worldsmith/core";
 import { WorldFromMap } from "./proposals.ts";
 import type { MapReport } from "./worker-client.ts";
 
@@ -183,7 +183,10 @@ export function createMcpServer(config: Config, services: HubServices, clientId?
         "loot table, signs (up to 4 lines, plain or {text,color,bold}), command blocks (impulse/repeating/chain), " +
         "teleport pads (pressure plate + hidden command block), vanilla structures (place structure, e.g. " +
         "minecraft:village_plains), features (e.g. minecraft:oak), entities (summon), the world spawn, game rules, " +
-        "or any other console command. Coordinates are relative to 'origin' (use player_position to build where " +
+        "or any other console command. 'template' places a saved template (save_template / list_templates), rotated " +
+        "or mirrored. 'voxels' draws a build as text layers with a legend (bottom layer first, rows north→south, " +
+        "characters west→east, space keeps the world's block); use it for houses, arenas and anything detailed. " +
+        "Coordinates are relative to 'origin' (use player_position to build where " +
         "someone stands; y is the block they stand in). Everything is validated against the world's exact Minecraft " +
         "version before anything runs, a backup is taken first (the owner can restore it to undo), and the report " +
         "says what changed and what failed. If command blocks are needed and are off, the world restarts to enable " +
@@ -198,6 +201,47 @@ export function createMcpServer(config: Config, services: HubServices, clientId?
       const report = await services.builds.run(resolve(slug), script, { allowRestart, by: `Claude (${clientId ?? "connector"})` });
       return { ...json(report), isError: !report.ok };
     },
+  );
+
+  const Vec = z.tuple([z.number().int(), z.number().int(), z.number().int()]);
+  server.registerTool(
+    "save_template",
+    {
+      title: "Save a build as a template",
+      description:
+        "Copy a box of a world (exact blocks, plus chest, sign and command block contents) into the template " +
+        "library, so it can be placed again anywhere, in any world, with the build tool's 'template' op (rotated " +
+        "or mirrored). Corners are absolute coordinates, inclusive; up to about a million blocks. Entities (mobs, " +
+        "armor stands, item frames) aren't copied. Commands inside command blocks keep their absolute coordinates, so " +
+        "re-place teleport pads after pasting a template somewhere else. Saving under an existing name replaces it.",
+      inputSchema: {
+        slug: slugArg,
+        name: TemplateName,
+        from: Vec,
+        to: Vec,
+        dimension: z.string().regex(/^([a-z0-9_.-]+:)?[a-z0-9_.-]+$/).default("minecraft:overworld"),
+        description: z.string().max(300).optional(),
+      },
+    },
+    async ({ slug, name, from, to, dimension, description }) => {
+      const s = resolve(slug);
+      const data = loadVersion(worlds.spec(s).minecraft.version);
+      if (!data) return { isError: true, content: [{ type: "text" as const, text: "No reference data for this world's Minecraft version." }] };
+      const meta = await services.worker.captureTemplate(s, { name, from, to, dimension, description, dataVersion: data.dataVersion });
+      audit(services.worlds.db, "template_saved", { name, world: s, by: `Claude (${clientId ?? "connector"})` });
+      return json(meta);
+    },
+  );
+
+  server.registerTool(
+    "list_templates",
+    {
+      title: "List saved templates",
+      description: "Templates in the library: size (x×y×z), block counts, what they're made of, and where they came from.",
+      inputSchema: {},
+      annotations: { readOnlyHint: true },
+    },
+    async () => json(await services.worker.listTemplates()),
   );
 
   server.registerTool(

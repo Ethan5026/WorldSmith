@@ -103,6 +103,9 @@ importers:
       '@worldsmith/mcdata':
         specifier: workspace:*
         version: link:../mcdata
+      '@worldsmith/mcworld':
+        specifier: workspace:*
+        version: link:../mcworld
       yaml:
         specifier: ^2.8.0
         version: 2.9.1

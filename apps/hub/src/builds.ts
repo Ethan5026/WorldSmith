@@ -23,7 +23,7 @@ export interface BuildReport {
 const BATCH = 40;
 const MAX_CHUNKS = 256;
 const UNCHANGED = /^(Could not set the block|No blocks were filled|Nothing changed)/i;
-const FAILED = /(Incorrect argument|Unknown or incomplete|Unknown (block|item|entity)|Invalid|Expected|not loaded|out of the world|Failed to|Can't|Cannot|Unable to|Unknown command)/i;
+const FAILED = /(There is no template|Incorrect argument|Unknown or incomplete|Unknown (block|item|entity)|Invalid|Expected|not loaded|out of the world|Failed to|Can't|Cannot|Unable to|Unknown command)/i;
 
 export class BuildService {
   worlds: WorldService;
@@ -60,7 +60,10 @@ export class BuildService {
   async run(slug: string, raw: unknown, opts: { allowRestart?: boolean; by?: string } = {}): Promise<BuildReport> {
     const script = BuildScript.parse(raw);
     const spec = this.worlds.spec(slug);
-    const compiled = compileBuild(script, loadVersion(spec.minecraft.version));
+    const library = script.ops.some((o) => o.op === "template") ? await this.worlds.worker.listTemplates() : [];
+    const compiled = compileBuild(script, loadVersion(spec.minecraft.version), {
+      templates: new Map(library.map((t) => [t.name, { id: t.id, size: t.size }])),
+    });
     const base = { world: slug, name: script.name };
     if (compiled.errors.length) return { ok: false, ...base, errors: compiled.errors };
     const notes: string[] = [];
@@ -92,6 +95,15 @@ export class BuildService {
         return { ok: false, ...base, errors: [`The build spans ${chunks} chunks; split it into parts of at most ${MAX_CHUNKS} chunks.`] };
       }
       area = `${b.min[0]} ${b.min[2]} ${b.max[0]} ${b.max[2]}`;
+    }
+
+    // Structure files first: library templates this build places, and voxel drawings.
+    if (compiled.templates.length) await this.worlds.worker.installTemplates(slug, compiled.templates);
+    if (compiled.files.length) {
+      await this.worlds.worker.putFiles(
+        slug,
+        compiled.files.map((f) => ({ kind: "inline" as const, encoding: "base64" as const, path: f.path, content: f.base64 })),
+      );
     }
 
     const failed: { command: string; output: string }[] = [];

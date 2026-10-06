@@ -4,6 +4,7 @@
 
 import { z } from "zod";
 import { checkBlockState, checkGamerule, type McVersionData } from "@worldsmith/mcdata";
+import { buildStructure, STRUCTURE_DIR, STRUCTURE_NAMESPACE, structureHash, StructureError, voxelBlocks } from "@worldsmith/mcworld";
 
 const Vec = z.tuple([z.number().int(), z.number().int(), z.number().int()]);
 type Vec = z.infer<typeof Vec>;
@@ -21,6 +22,9 @@ const Item = z.object({
   count: z.number().int().min(1).max(99).default(1),
   slot: z.number().int().min(0).max(26).optional(),
 });
+
+/** Template names in the library (save_template), e.g. "spawn-lobby". */
+export const TemplateName = z.string().regex(/^[a-z0-9][a-z0-9_-]{0,40}$/, "lowercase letters, digits, - and _");
 
 export const BuildOp = z.discriminatedUnion("op", [
   z.object({
@@ -77,6 +81,23 @@ export const BuildOp = z.discriminatedUnion("op", [
   z.object({ op: z.literal("spawnpoint"), at: Vec }),
   z.object({ op: z.literal("gamerule"), rule: z.string().max(64), value: z.union([z.boolean(), z.number().int()]) }),
   z.object({ op: z.literal("command"), run: z.string().min(1).max(1400).describe("Any other console command, run as-is (no leading slash)") }),
+  z.object({
+    op: z.literal("template"),
+    name: TemplateName.describe("A saved template (see list_templates)"),
+    at: Vec.describe("Where the template's corner (its lowest north-west block before rotating) goes"),
+    rotation: z.enum(["none", "clockwise_90", "180", "counterclockwise_90"]).default("none"),
+    mirror: z.enum(["none", "left_right", "front_back"]).default("none"),
+  }),
+  z.object({
+    op: z.literal("voxels"),
+    at: Vec.describe("Lowest north-west corner of the drawing"),
+    legend: z.record(z.string().length(1), Block).describe('Character → block state, e.g. {"#": "stone_bricks", "D": "oak_door[facing=south,half=lower]"}'),
+    layers: z
+      .array(z.array(z.string().max(96)).max(96))
+      .min(1)
+      .max(96)
+      .describe("Bottom layer first; each layer lists rows from north to south; each character is one block from west to east. Space or . leaves the world's block as it is."),
+  }),
 ]);
 export type BuildOp = z.infer<typeof BuildOp>;
 
@@ -89,6 +110,10 @@ export type BuildScript = z.infer<typeof BuildScript>;
 
 export interface CompiledBuild {
   commands: string[];
+  /** Structure files to put into the world before the commands run (voxel drawings). */
+  files: { path: string; base64: string }[];
+  /** Library templates the commands place (they must be installed in the world first). */
+  templates: string[];
   /** Absolute bounding box of everything placed (for forceloading). */
   bounds: { min: Vec; max: Vec } | undefined;
   /** Problems that stop the build (nothing runs). */
@@ -138,9 +163,16 @@ function splitFill(a: Vec, b: Vec): [Vec, Vec][] {
   return out;
 }
 
+export interface CompileOptions {
+  /** Library templates: name → in-world id (worldsmith:<name>_<hash>) and size. */
+  templates?: Map<string, { id: string; size: Vec }>;
+}
+
 /** Compile a BuildScript to console commands. Pure: no I/O. */
-export function compileBuild(script: BuildScript, data?: McVersionData): CompiledBuild {
+export function compileBuild(script: BuildScript, data?: McVersionData, opts: CompileOptions = {}): CompiledBuild {
   const commands: string[] = [];
+  const files: CompiledBuild["files"] = [];
+  const templates: string[] = [];
   const errors: string[] = [];
   const points: Vec[] = [];
   const at = (v: Vec): Vec => {
@@ -229,6 +261,38 @@ export function compileBuild(script: BuildScript, data?: McVersionData): Compile
         } else commands.push(`gamerule ${op.rule} ${op.value}`);
         break;
       }
+      case "template": {
+        const t = opts.templates?.get(op.name);
+        if (!t) {
+          errors.push(`${where}: no template called "${op.name}"${opts.templates?.size ? `. Saved templates: ${[...opts.templates.keys()].slice(0, 12).join(", ")}` : " (save one with save_template)"}`);
+          break;
+        }
+        const p = at(op.at);
+        // Rotation turns the template around its corner; cover every way it can swing for loading.
+        const reach = Math.max(t.size[0], t.size[2]);
+        at([op.at[0] - reach, op.at[1], op.at[2] - reach]);
+        at([op.at[0] + reach, op.at[1] + t.size[1] - 1, op.at[2] + reach]);
+        if (!templates.includes(op.name)) templates.push(op.name);
+        commands.push(`place template ${t.id} ${pos(p)} ${op.rotation} ${op.mirror}`);
+        break;
+      }
+      case "voxels": {
+        const legend: Record<string, string> = {};
+        for (const [ch, state] of Object.entries(op.legend)) legend[ch] = block(state, `${where} legend "${ch}"`);
+        try {
+          const { size, blocks } = voxelBlocks(op.layers, legend);
+          const data2 = buildStructure(size, blocks, data?.dataVersion ?? 4903);
+          const name = `build_${structureHash(data2)}`;
+          if (!files.some((f) => f.path.endsWith(`/${name}.nbt`))) files.push({ path: `${STRUCTURE_DIR}/${name}.nbt`, base64: data2.toString("base64") });
+          const p = at(op.at);
+          at([op.at[0] + size[0] - 1, op.at[1] + size[1] - 1, op.at[2] + size[2] - 1]);
+          commands.push(`place template ${STRUCTURE_NAMESPACE}:${name} ${pos(p)}`);
+        } catch (err) {
+          if (err instanceof StructureError) errors.push(`${where}: ${err.message}`);
+          else throw err;
+        }
+        break;
+      }
       case "command":
         if (/^\/?(whitelist|op|deop|pardon|stop|restart|ban)\b/i.test(op.run.trim())) {
           errors.push(`${where}: "${op.run.split(" ")[0]}" isn't allowed in builds (access and server control stay with the owner).`);
@@ -246,5 +310,5 @@ export function compileBuild(script: BuildScript, data?: McVersionData): Compile
         max: [Math.max(...points.map((p) => p[0])), Math.max(...points.map((p) => p[1])), Math.max(...points.map((p) => p[2]))] as Vec,
       }
     : undefined;
-  return { commands, bounds, errors };
+  return { commands, files, templates, bounds, errors };
 }
