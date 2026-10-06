@@ -117,3 +117,33 @@ test("voxels op: one structure file per drawing, placed at its corner", () => {
   const bad = compileBuild({ name: "t", origin: [0, 0, 0], ops: [{ op: "voxels", at: [0, 0, 0], legend: { "#": "stone" }, layers: [["#?"]] }] });
   assert.match(bad.errors[0]!, /missing from the legend: "\?"/);
 });
+
+test("hunger_games kit: datapack, setup commands and a command-block control panel", () => {
+  const script = BuildScript.parse({
+    name: "hg",
+    origin: [0, 64, 0],
+    ops: [{ op: "hunger_games", center: [0, 0, 0], arenaRadius: 60, controls: [20, 0, -40], lobby: [0, 20, -50] }],
+  });
+  const r = compileBuild(script, v);
+  assert.deepEqual(r.errors, []);
+  const files = new Map(r.files.map((f) => [f.path, Buffer.from(f.base64, "base64").toString("utf8")]));
+  const fns = [...files].filter(([p]) => p.endsWith(".mcfunction"));
+  assert.ok(files.has("world/datapacks/worldsmith_game/pack.mcmeta"));
+  assert.match(files.get("world/datapacks/worldsmith_game/data/worldsmith_game/loot_table/hg/center.json")!, /minecraft:stone_sword/);
+  assert.equal(fns.length, 12 + 13, "12 pad functions + 13 game functions");
+  // Every line is a real 26.2 command (catches typos before anything runs).
+  for (const [path, body] of fns) {
+    for (const line of body.split("\n").filter((l) => l && !l.startsWith("#"))) {
+      assert.ok(v.commands.includes(line.split(" ")[0]!), `${path}: ${line}`);
+    }
+  }
+  assert.equal(r.commands[0], "reload");
+  assert.equal(r.commands.at(-1), "function worldsmith_game:hg/setup");
+  assert.ok(r.commands.some((c) => c.startsWith("setblock 24 64 -40 minecraft:repeating_command_block") && c.includes("hg/tick")));
+  assert.deepEqual(r.bounds, { min: [-60, 64, -60], max: [60, 84, 60] });
+  const live = files.get("world/datapacks/worldsmith_game/data/worldsmith_game/function/hg/grace_over.mcfunction")!;
+  assert.match(live, /worldborder set 30 600s/, "border time always has a unit");
+  // Same script name → same hidden spots (rebuilds don't move them).
+  const again = compileBuild(script, v);
+  assert.equal(again.files.find((f) => f.path.endsWith("setup.mcfunction"))!.base64, r.files.find((f) => f.path.endsWith("setup.mcfunction"))!.base64);
+});

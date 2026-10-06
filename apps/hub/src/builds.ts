@@ -68,7 +68,7 @@ export class BuildService {
     if (compiled.errors.length) return { ok: false, ...base, errors: compiled.errors };
     const notes: string[] = [];
 
-    const needsCommandBlocks = script.ops.some((o) => o.op === "command_block" || o.op === "teleport_pad");
+    const needsCommandBlocks = script.ops.some((o) => o.op === "command_block" || o.op === "teleport_pad" || o.op === "hunger_games");
     if (needsCommandBlocks && !spec.properties.enableCommandBlock) {
       const view = await this.worlds.view(slug, true);
       if (view.state === "online" && view.players.online > 0 && !opts.allowRestart) {
@@ -110,7 +110,12 @@ export class BuildService {
     let changed = 0;
     let unchanged = 0;
     try {
-      if (area) await this.worlds.worker.rcon(slug, [`forceload add ${area}`]);
+      if (area) {
+        await this.worlds.worker.rcon(slug, [`forceload add ${area}`]);
+        // Chunks load in the background; give a big area a moment before placing blocks in it.
+        const chunks = (Math.floor(b!.max[0] / 16) - Math.floor(b!.min[0] / 16) + 1) * (Math.floor(b!.max[2] / 16) - Math.floor(b!.min[2] / 16) + 1);
+        if (chunks > 9) await new Promise((r) => setTimeout(r, Math.min(15_000, 1000 + chunks * 40)));
+      }
       for (let i = 0; i < compiled.commands.length; i += BATCH) {
         const batch = compiled.commands.slice(i, i + BATCH);
         const outputs = await this.worlds.worker.rcon(slug, batch);

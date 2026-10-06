@@ -75,3 +75,13 @@ The owner's acceptance prompt: *"Disneyland Hunger Games: chests around the cent
 - **Automatic:** CurseForge Worlds API (owner's free API key; only files whose authors allow third-party download), direct zip links, GitHub releases.
 - **Assisted:** Planet Minecraft, where most Java fan maps live (e.g. 185 Java "Disneyland" maps), returns **403 to automated clients** (bot protection). We **don't bypass it**. Claude finds the map and gives the owner the link; the owner downloads it in a browser and drops the zip into a watched folder on the PC, or uploads it in the portal. Then WorldSmith validates and imports it.
 - Fan maps of real brands (Disney) are "All Rights Reserved" fan works, fine for private play on a whitelisted server. Never redistribute them.
+
+## Hunger Games kit (`hunger_games` build op) ✅ verified live in the lab
+
+One build step sets up a whole game: a `worldsmith_game` datapack (loot tables `hg/center`, `hg/hidden`; functions start/countdown/go/live/eliminated/end/reset/refill), gold spawn pads in a ring, center chests, hidden barrels buried at the surface (placed with a marker + `spreadplayers` so they land on whatever terrain the map has; the markers stay so Reset can refill them), and a command-block control panel: **Start** button, **Reset** button, and the repeating **game clock** (`function worldsmith_game:hg/tick`).
+
+- Players are frozen on their pads during the countdown with `attribute … movement_speed/jump_strength base set 0` (restored at GO: 0.1 / 0.42).
+- Deaths: `deathCount` objective → spectator. Win when one player is left (or nobody, which also covers solo tests).
+- Grace period: `gamerule pvp false`, then `pvp true` + `worldborder set <final> <N>s`.
+- Reset forceloads the arena, waits 3 s (`schedule`), refills every chest, and unloads it again.
+- Verified: datapack enabled by `reload`, 10/10 hidden barrels placed with loot tables, clock ticking (20/s), countdown → GO → end with no players, reset.

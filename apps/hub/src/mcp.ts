@@ -186,6 +186,9 @@ export function createMcpServer(config: Config, services: HubServices, clientId?
         "or any other console command. 'template' places a saved template (save_template / list_templates), rotated " +
         "or mirrored. 'voxels' draws a build as text layers with a legend (bottom layer first, rows north→south, " +
         "characters west→east, space keeps the world's block); use it for houses, arenas and anything detailed. " +
+        "'hunger_games' sets up a whole game in one step: spawn pads around the center, center chests and buried hidden " +
+        "barrels with loot tables, a world border that shrinks after a grace period, a countdown, eliminations and a " +
+        "winner, run by a command-block control panel (Start, Reset, clock) placed at 'controls'. " +
         "Coordinates are relative to 'origin' (use player_position to build where " +
         "someone stands; y is the block they stand in). Everything is validated against the world's exact Minecraft " +
         "version before anything runs, a backup is taken first (the owner can restore it to undo), and the report " +

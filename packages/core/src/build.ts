@@ -4,6 +4,7 @@
 
 import { z } from "zod";
 import { checkBlockState, checkGamerule, type McVersionData } from "@worldsmith/mcdata";
+import { compileHungerGames, HungerGamesOp } from "./games.ts";
 import { buildStructure, STRUCTURE_DIR, STRUCTURE_NAMESPACE, structureHash, StructureError, voxelBlocks } from "@worldsmith/mcworld";
 
 const Vec = z.tuple([z.number().int(), z.number().int(), z.number().int()]);
@@ -98,6 +99,7 @@ export const BuildOp = z.discriminatedUnion("op", [
       .max(96)
       .describe("Bottom layer first; each layer lists rows from north to south; each character is one block from west to east. Space or . leaves the world's block as it is."),
   }),
+  HungerGamesOp,
 ]);
 export type BuildOp = z.infer<typeof BuildOp>;
 
@@ -291,6 +293,14 @@ export function compileBuild(script: BuildScript, data?: McVersionData, opts: Co
           if (err instanceof StructureError) errors.push(`${where}: ${err.message}`);
           else throw err;
         }
+        break;
+      }
+      case "hunger_games": {
+        block(op.padBlock, `${where} padBlock`);
+        const g = compileHungerGames(op, script.origin, script.name, data);
+        for (const f of g.files) files.push({ path: f.path, base64: Buffer.from(f.content, "utf8").toString("base64") });
+        commands.push(...g.commands);
+        points.push(...g.points);
         break;
       }
       case "command":
