@@ -50,6 +50,36 @@ export interface RenderResponse {
   features: RenderFeature[];
 }
 
+export interface MapWorldInfo {
+  root: string;
+  levelName: string;
+  dataVersion?: number;
+  version?: string;
+  needsUpgrade: boolean;
+  gameMode: "survival" | "creative" | "adventure" | "spectator";
+  hardcore: boolean;
+  allowCommands: boolean;
+  difficulty?: string;
+  spawn?: { x: number; y: number; z: number };
+  dimensions: Record<string, number>;
+  datapacks: string[];
+  structures: number;
+  hasResourcePack: boolean;
+  worldBytes: number;
+}
+
+export interface MapReport {
+  id: string;
+  createdAt: string;
+  source: { kind: "url"; url: string } | { kind: "upload"; filename: string };
+  zipBytes: number;
+  sha256: string;
+  worlds: MapWorldInfo[];
+  skipped: { path: string; reason: string }[];
+  skippedCount: number;
+  warnings: string[];
+}
+
 export class WorkerClient {
   base: URL;
   token: string;
@@ -59,13 +89,17 @@ export class WorkerClient {
     this.token = token;
   }
 
-  private async call<T>(method: string, path: string, body?: unknown, timeoutMs = 30_000): Promise<T> {
+  private async call<T>(method: string, path: string, body?: unknown, timeoutMs = 30_000, raw?: { stream: AsyncIterable<Uint8Array>; type: string }): Promise<T> {
     const res = await fetch(new URL(path, this.base), {
       method,
-      headers: { Authorization: `Bearer ${this.token}`, ...(body !== undefined ? { "Content-Type": "application/json" } : {}) },
-      body: body !== undefined ? JSON.stringify(body) : undefined,
+      headers: {
+        Authorization: `Bearer ${this.token}`,
+        ...(raw ? { "Content-Type": raw.type } : body !== undefined ? { "Content-Type": "application/json" } : {}),
+      },
+      body: raw ? (raw.stream as unknown as ReadableStream) : body !== undefined ? JSON.stringify(body) : undefined,
       signal: AbortSignal.timeout(timeoutMs),
-    });
+      ...(raw ? { duplex: "half" } : {}),
+    } as RequestInit);
     const text = await res.text();
     if (!res.ok) {
       let message = text;
@@ -106,6 +140,27 @@ export class WorkerClient {
   }
   restore(slug: string, id: string): Promise<{ safetyBackup: BackupInfo }> {
     return this.call("POST", `/worlds/${slug}/restore`, { id }, 900_000);
+  }
+  remove(slug: string, purge: boolean): Promise<void> {
+    return this.call("DELETE", `/worlds/${slug}?purge=${purge}`, undefined, 90_000);
+  }
+  listMaps(): Promise<MapReport[]> {
+    return this.call("GET", "/maps");
+  }
+  getMap(id: string): Promise<MapReport> {
+    return this.call("GET", `/maps/${encodeURIComponent(id)}`);
+  }
+  importMap(url: string): Promise<MapReport> {
+    return this.call("POST", "/maps/import", { url }, 900_000);
+  }
+  uploadMap(stream: AsyncIterable<Uint8Array>, filename: string): Promise<MapReport> {
+    return this.call("POST", `/maps/upload?filename=${encodeURIComponent(filename)}`, undefined, 900_000, { stream, type: "application/zip" });
+  }
+  deleteMap(id: string): Promise<void> {
+    return this.call("DELETE", `/maps/${encodeURIComponent(id)}`);
+  }
+  installMap(slug: string, id: string, root: string): Promise<{ files: number; bytes: number }> {
+    return this.call("POST", `/worlds/${slug}/install-map`, { id, root }, 900_000);
   }
   render(slug: string, req: RenderRequest): Promise<RenderResponse> {
     return this.call("POST", `/worlds/${slug}/render`, req, 120_000);

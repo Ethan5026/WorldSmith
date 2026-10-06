@@ -153,6 +153,48 @@ export function createPrivateApp(config: Config, db: Db, oauth: OwnerApprovalOAu
     handle((req) => worlds.restore(Slug.parse(req.params.slug), z.object({ id: z.string().max(80) }).parse(req.body).id)),
   );
 
+  // ---- public maps and Claude's proposals ----
+  const MapId = z.string().regex(/^\d{8}-\d{6}-[0-9a-f]{6}$/);
+  app.get("/api/maps", handle(() => services.worker.listMaps()));
+  app.post(
+    "/api/maps/upload",
+    csrf,
+    handle(async (req) => {
+      // The zip streams straight through to the worker, which caps the size and inspects it.
+      if (!/^application\/(zip|octet-stream|x-zip-compressed)/.test(String(req.get("content-type")))) throw new Error("Choose a .zip file.");
+      const filename = z.string().max(200).default("upload.zip").parse(req.query.filename);
+      const report = await services.worker.uploadMap(req, filename);
+      audit(db, "map_imported", { id: report.id, source: "upload", filename });
+      return report;
+    }),
+  );
+  app.post(
+    "/api/maps/import",
+    csrf,
+    handle(async (req) => {
+      const { url } = z.object({ url: z.url({ protocol: /^https$/ }) }).parse(req.body);
+      const report = await services.worker.importMap(url);
+      audit(db, "map_imported", { id: report.id, source: "url", url });
+      return report;
+    }),
+  );
+  app.delete("/api/maps/:id", csrf, handle((req) => services.worker.deleteMap(MapId.parse(req.params.id))));
+  app.post(
+    "/api/maps/:id/propose",
+    csrf,
+    handle((req) => services.proposals.proposeWorldFromMap({ ...(req.body ?? {}), mapId: MapId.parse(req.params.id) }, "owner (portal)")),
+  );
+  app.get("/api/proposals", handle(() => services.proposals.list()));
+  app.post(
+    "/api/proposals/:id/:decision",
+    csrf,
+    handle(async (req) => {
+      const id = z.coerce.number().int().parse(req.params.id);
+      const decision = z.enum(["approve", "decline"]).parse(req.params.decision);
+      return decision === "approve" ? services.proposals.approve(id, (req.body ?? {}).answers) : services.proposals.decline(id);
+    }),
+  );
+
   // ---- invites ----
   app.get("/api/invites", handle(() => access.invites()));
   app.post(

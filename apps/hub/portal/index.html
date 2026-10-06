@@ -32,6 +32,11 @@
       <div id="declined-list" class="stack"></div>
     </details>
 
+    <section id="proposals" aria-labelledby="h-proposals" hidden>
+      <h2 id="h-proposals">New worlds to review</h2>
+      <div id="proposal-list" class="stack"></div>
+    </section>
+
     <section id="connections" aria-labelledby="h-connections" hidden>
       <h2 id="h-connections">Claude wants to connect</h2>
       <div id="pending-list" class="stack"></div>
@@ -41,6 +46,24 @@
       <h2 id="h-worlds">Worlds</h2>
       <div id="world-list" class="stack"><p class="muted small">Loading…</p></div>
       <p id="address-note" class="muted small"></p>
+    </section>
+
+    <section id="maps" aria-labelledby="h-maps">
+      <h2 id="h-maps">Maps</h2>
+      <p class="muted small">Download a Java map zip (Planet Minecraft, CurseForge…), then add it here. WorldSmith checks it and only ever installs world data, never programs.</p>
+      <form id="map-upload" class="card stack">
+        <label class="field" for="map-file">Map zip from this device
+          <input id="map-file" type="file" accept=".zip,application/zip" required>
+        </label>
+        <progress id="map-progress" max="1" value="0" hidden></progress>
+        <button type="submit" class="primary">Upload map</button>
+      </form>
+      <form id="map-link" class="row add">
+        <label class="sr-only" for="map-url">Direct download link</label>
+        <input id="map-url" type="url" placeholder="Or paste a direct https download link" autocapitalize="off" spellcheck="false" required>
+        <button type="submit">Download</button>
+      </form>
+      <div id="map-list" class="stack"></div>
     </section>
 
     <section aria-labelledby="h-friends">

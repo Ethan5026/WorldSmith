@@ -125,6 +125,19 @@ export function openDb(dataDir: string): Db {
       created_at    INTEGER NOT NULL
     );
 
+    -- Things Claude suggests that only the owner can approve (new worlds), decided in the portal.
+    CREATE TABLE IF NOT EXISTS proposals (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      kind        TEXT NOT NULL CHECK (kind IN ('world_from_map')),
+      title       TEXT NOT NULL,
+      payload     TEXT NOT NULL,
+      status      TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','building','approved','declined','failed')),
+      created_by  TEXT NOT NULL,
+      created_at  INTEGER NOT NULL,
+      decided_at  INTEGER,
+      result      TEXT
+    );
+
     CREATE TABLE IF NOT EXISTS audit_log (
       id      INTEGER PRIMARY KEY AUTOINCREMENT,
       at      INTEGER NOT NULL,

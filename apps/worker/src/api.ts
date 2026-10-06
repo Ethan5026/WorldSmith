@@ -6,8 +6,10 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 import { WorldFile, WorldSpec } from "@worldsmith/core";
 import type { WorldRuntime } from "./runtime.ts";
+import { MapError } from "./maps.ts";
 
 const SlugParam = z.string().regex(/^[a-z0-9][a-z0-9-]{1,30}$/);
+const MapId = z.string().regex(/^\d{8}-\d{6}-[0-9a-f]{6}$/);
 
 class BadRequest extends Error {}
 
@@ -33,7 +35,8 @@ export function createWorkerApp(runtime: WorldRuntime, token: string): express.E
       } catch (err) {
         const message = err instanceof z.ZodError ? z.prettifyError(err) : (err as Error).message;
         console.error(JSON.stringify({ t: new Date().toISOString(), event: "worker_error", path: req.path, message }));
-        if (!res.headersSent) res.status(err instanceof z.ZodError || err instanceof BadRequest ? 400 : 500).json({ error: message });
+        const status = err instanceof z.ZodError || err instanceof BadRequest || err instanceof MapError ? 400 : 500;
+        if (!res.headersSent) res.status(status).json({ error: message });
       }
     };
 
@@ -88,6 +91,29 @@ export function createWorkerApp(runtime: WorldRuntime, token: string): express.E
         .parse(req.body);
       if (input.dimension.includes("..")) throw new BadRequest("bad dimension");
       return runtime.render(slugOf(req), input);
+    }),
+  );
+  // ---- public maps ----
+  app.get("/maps", handle(async () => runtime.maps.list()));
+  app.get("/maps/:id", handle(async (req) => runtime.maps.get(MapId.parse(req.params.id))));
+  app.post(
+    "/maps/import",
+    handle(async (req) => runtime.maps.importUrl(z.object({ url: z.url({ protocol: /^https$/ }) }).parse(req.body).url)),
+  );
+  app.post(
+    "/maps/upload",
+    handle(async (req) => {
+      if (!/^application\/(zip|octet-stream|x-zip-compressed)/.test(String(req.get("content-type")))) throw new BadRequest("send the zip as application/zip");
+      const filename = z.string().max(200).default("upload.zip").parse(req.query.filename);
+      return runtime.maps.importUpload(req, filename);
+    }),
+  );
+  app.delete("/maps/:id", handle(async (req) => runtime.maps.remove(MapId.parse(req.params.id))));
+  app.post(
+    "/worlds/:slug/install-map",
+    handle(async (req) => {
+      const { id, root } = z.object({ id: MapId, root: z.string().max(300) }).parse(req.body);
+      return runtime.installMap(slugOf(req), id, root);
     }),
   );
   app.get("/worlds/:slug/backups", handle(async (req) => runtime.listBackups(slugOf(req))));

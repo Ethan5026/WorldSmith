@@ -16,6 +16,7 @@ import { RconClient, statusPing, descriptionText } from "@worldsmith/mcproto";
 import { buildTar, resolveFile, type ResolvedFile } from "./files.ts";
 import { Backups, isBackupId, type BackupInfo } from "./backups.ts";
 import { renderContainerArea, type RenderInput, type RenderOutput } from "./render.ts";
+import { MapStore } from "./maps.ts";
 
 const MANAGED_LABEL = "worldsmith.world";
 const RCON_PORT = 25575;
@@ -37,8 +38,10 @@ export class WorldRuntime {
   cacheDir: string;
   backups: Backups;
   floodgateKey: string | undefined;
+  maps: MapStore;
 
-  constructor(opts: { network: string; cacheDir: string; backupsDir: string; floodgateKey?: string; socketPath?: string }) {
+  constructor(opts: { network: string; cacheDir: string; backupsDir: string; mapsDir?: string; floodgateKey?: string; socketPath?: string }) {
+    this.maps = new MapStore(opts.mapsDir ?? `${opts.cacheDir}/maps`);
     this.floodgateKey = opts.floodgateKey;
     this.docker = new Docker({ socketPath: opts.socketPath ?? "/var/run/docker.sock" });
     this.network = opts.network;
@@ -255,6 +258,21 @@ export class WorldRuntime {
     } finally {
       await helper.remove({ force: true });
     }
+  }
+
+  /** Put an imported map into a world that has never started (so there's no world of its own yet). */
+  async installMap(slug: string, id: string, root: string): Promise<{ files: number; bytes: number }> {
+    const info = await this.inspect(slug);
+    if (!info) throw new Error(`World ${slug} does not exist`);
+    if (info.State.Running) throw new Error("Stop the world before installing a map");
+    let hasWorld = true;
+    try {
+      await this.container(slug).infoArchive({ path: "/data/world/level.dat" });
+    } catch {
+      hasWorld = false;
+    }
+    if (hasWorld) throw new Error(`${slug} already has a world; maps go into new worlds only`);
+    return this.maps.install(id, root, this.container(slug));
   }
 
   /** Top-down map of an area. Running worlds save first so the picture includes recent changes. */

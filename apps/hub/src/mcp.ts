@@ -12,6 +12,8 @@ import type { HubServices } from "./services.ts";
 import { audit } from "./db.ts";
 import { checkBlockState, checkGamerule, LEGACY_GAMERULES, loadVersion, type McVersionData } from "@worldsmith/mcdata";
 import { BuildScript } from "@worldsmith/core";
+import { WorldFromMap } from "./proposals.ts";
+import type { MapReport } from "./worker-client.ts";
 
 /**
  * Check and normalize one console command against the world's exact Minecraft version.
@@ -60,8 +62,9 @@ export function createMcpServer(config: Config, services: HubServices, clientId?
       instructions:
         `WorldSmith runs ${config.ownerName}'s personal Minecraft Java server (Bedrock friends join through Geyser). ` +
         "You may change anything inside the worlds right away: run console commands, op players, change gamemodes, " +
-        "gamerules, time and weather, and start or stop worlds. You cannot let new people in, delete worlds, or create " +
-        "new worlds yet: new people ask by trying to join, and the owner approves them in the WorldSmith portal. " +
+        "gamerules, time and weather, and start or stop worlds. You cannot let new people in or delete worlds: new people " +
+        "ask by trying to join, and the owner approves them in the WorldSmith portal. New worlds from public maps: " +
+        "import_map (or the owner uploads the zip), then propose_world_from_map; the owner approves in the portal. " +
         "Commands run as the server console, so use player names or selectors instead of ~ coordinates relative to you. " +
         "Minecraft 26.x differs from older versions you may remember: game rules are snake_case and some were renamed " +
         "(keep_inventory, advance_time, spawn_mobs; pvp is a game rule) — check minecraft_reference; text components in " +
@@ -278,6 +281,96 @@ export function createMcpServer(config: Config, services: HubServices, clientId?
           { type: "text" as const, text: lines.join("\n") },
         ],
       };
+    },
+  );
+
+  // ---- public maps ----
+  const mapSummary = (m: MapReport) => ({
+    id: m.id,
+    source: m.source,
+    sizeMb: Math.round(m.zipBytes / 1024 / 1024),
+    worlds: m.worlds.map((w) => ({
+      root: w.root,
+      name: w.levelName,
+      minecraft: w.version ?? "1.8 or older",
+      upgradedOnFirstStart: w.needsUpgrade,
+      gameMode: w.gameMode,
+      difficulty: w.difficulty,
+      spawn: w.spawn,
+      regionFiles: w.dimensions,
+      datapacks: w.datapacks,
+      savedStructures: w.structures,
+      resourcePack: w.hasResourcePack,
+    })),
+    warnings: m.warnings,
+    notInstalled: m.skippedCount ? `${m.skippedCount} file(s), e.g. ${m.skipped.slice(0, 5).map((s) => `${s.path} (${s.reason})`).join("; ")}` : "nothing",
+  });
+
+  server.registerTool(
+    "import_map",
+    {
+      title: "Download a public map",
+      description:
+        "Download a Java Edition map zip from a direct https link (a CurseForge file download, a map maker's direct " +
+        "link…) and check it: the worlds inside, the Minecraft version that saved it, game mode, spawn, datapacks, " +
+        "size and anything suspicious. Nothing is installed or run. Sites that block automatic downloads (Planet " +
+        "Minecraft and most map pages) need the owner to download the zip and upload it in the WorldSmith portal " +
+        "(Maps); find it with list_maps afterwards. Then use propose_world_from_map. Respect map makers' terms: " +
+        "keep maps private to this server and credit the author.",
+      inputSchema: { url: z.url({ protocol: /^https$/ }) },
+    },
+    async ({ url }) => {
+      const report = await services.worker.importMap(url);
+      audit(services.worlds.db, "map_imported", { id: report.id, source: "url", url, by: `Claude (${clientId ?? "connector"})` });
+      return json(mapSummary(report));
+    },
+  );
+
+  server.registerTool(
+    "list_maps",
+    {
+      title: "List downloaded maps",
+      description: "Maps already downloaded or uploaded by the owner, newest first, with what's inside each.",
+      inputSchema: {},
+      annotations: { readOnlyHint: true },
+    },
+    async () => json((await services.worker.listMaps()).map(mapSummary)),
+  );
+
+  server.registerTool(
+    "propose_world_from_map",
+    {
+      title: "Propose a world from a map",
+      description:
+        "Ask the owner to create a new world from a downloaded map. New worlds need the owner's approval: they get a " +
+        "notification and approve in the portal. If Bedrock players may join (bedrock: yes or unknown), the portal " +
+        "also asks them how closely textures and behavior must match on Bedrock; relay the crossplay summary from " +
+        "the result so they know what differs. Put your pitch and plans for the world (lobby, rules, chests…) in notes. " +
+        "Check back with proposal_status; once approved, the world exists (asleep) and you can build in it.",
+      inputSchema: WorldFromMap.shape,
+    },
+    async (args) => {
+      const view = await services.proposals.proposeWorldFromMap(args, `Claude (${clientId ?? "connector"})`);
+      return json({
+        proposal: view.id,
+        status: view.status,
+        crossplay: { summary: view.crossplay.summary, questionsForOwner: view.crossplay.questions.map((q) => q.prompt), differences: view.crossplay.differences.map((d) => `${d.feature}: Java: ${d.java} Bedrock: ${d.bedrock}`) },
+        next: "The owner was notified and decides in the WorldSmith portal. Use proposal_status to see the outcome.",
+      });
+    },
+  );
+
+  server.registerTool(
+    "proposal_status",
+    {
+      title: "Check a proposal",
+      description: "Whether the owner approved, declined, or is still deciding on a proposal (and the new world's slug once built).",
+      inputSchema: { id: z.number().int().positive() },
+      annotations: { readOnlyHint: true },
+    },
+    async ({ id }) => {
+      const v = await services.proposals.get(id);
+      return json({ id: v.id, title: v.title, status: v.status, world: v.result?.slug, error: v.result?.error });
     },
   );
 

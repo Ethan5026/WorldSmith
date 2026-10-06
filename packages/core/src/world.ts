@@ -83,6 +83,8 @@ export const WorldSpec = z.object({
   crossplay: z.object({ bedrock: z.boolean() }).default({ bedrock: false }),
   /** Minutes with nobody online before the world goes to sleep. */
   idleSleepMinutes: z.number().int().min(1).max(1440).default(10),
+  /** Upgrade every chunk on the next start (imported maps saved by older Minecraft versions). */
+  upgradeWorld: z.boolean().default(false),
 });
 export type WorldSpec = z.infer<typeof WorldSpec>;
 
@@ -140,6 +142,7 @@ export function compileWorld(spec: WorldSpec, opts: { rconPassword: string }): C
     // Floodgate (Bedrock) players can't sign chat messages; Java servers must not require it.
     env.ENFORCE_SECURE_PROFILE = "FALSE";
   }
+  if (spec.upgradeWorld) env.EXTRA_ARGS = "--forceUpgrade";
   if (spec.minecraft.type === "PAPER") env.PATCH_DEFINITIONS = `/data/${PATCH_DIR}`;
   return {
     image: "itzg/minecraft-server:java25",

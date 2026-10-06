@@ -43,6 +43,18 @@ function button(label, cls, onClick) {
   });
   return b;
 }
+// Background refreshes must not rebuild a list while someone is choosing in it (iPhone closes an
+// open picker when its element is replaced), and needn't rebuild a list that hasn't changed.
+const lastRender = {};
+function shouldRender(id, data) {
+  const a = document.activeElement;
+  if ($(id).contains(a) && /^(SELECT|INPUT|TEXTAREA)$/.test(a.tagName)) return false;
+  const sig = JSON.stringify(data);
+  if (lastRender[id] === sig) return false;
+  lastRender[id] = sig;
+  return true;
+}
+
 function ago(ms) {
   const s = Math.round((Date.now() - ms) / 1000);
   if (s < 60) return "just now";
@@ -122,11 +134,197 @@ async function loadDeclined() {
   );
 }
 
+// ---- new worlds to review (Claude's proposals, and maps you turn into worlds) ----------------
+const PROPOSAL_STATE = { pending: "Waiting for you", building: "Building…", approved: "Built", declined: "Declined", failed: "Didn't work" };
+const mb = (bytes) => `${Math.max(1, Math.round(bytes / 1e6))} MB`;
+
+function crossplayBlock(p, answers) {
+  const cp = p.crossplay;
+  const parts = [el("p", { class: "small" }, cp.summary)];
+  if (p.status === "pending") {
+    for (const q of cp.questions) {
+      const key = q.id === "bedrock_players" ? "bedrockPlayers" : q.id;
+      const sel = el("select", { id: `q-${p.id}-${q.id}` }, el("option", { value: "" }, "Choose…"), ...q.options.map((o) => el("option", { value: o.value }, o.label)));
+      const detail = el("p", { class: "muted small" }, "");
+      const show = () => (detail.textContent = q.options.find((o) => o.value === sel.value)?.detail ?? "");
+      if (answers[key]) sel.value = answers[key];
+      show();
+      sel.addEventListener("change", () => {
+        answers[key] = sel.value || undefined;
+        show();
+      });
+      parts.push(el("label", { class: "field", for: sel.id }, q.prompt, sel), detail);
+    }
+  }
+  if (cp.differences.length) {
+    parts.push(
+      el(
+        "details",
+        { class: "diffs" },
+        el("summary", { class: "small" }, `What's different on Bedrock (${cp.differences.length})`),
+        el("ul", { class: "small" }, ...cp.differences.map((d) => el("li", {}, el("strong", {}, d.feature), ` · Java: ${d.java} Bedrock: ${d.bedrock}`))),
+      ),
+    );
+  }
+  return parts;
+}
+
+const proposalAnswers = {};
+
+async function loadProposals() {
+  const list = await api("/api/proposals");
+  const open = list.filter((p) => p.status === "pending" || p.status === "building");
+  $("proposals").hidden = list.length === 0;
+  if (!shouldRender("proposal-list", list)) return;
+  $("proposal-list").replaceChildren(
+    ...list.map((p) => {
+      const answers = (proposalAnswers[p.id] ??= {});
+      const r = p.request;
+      const facts = p.map
+        ? `From "${p.map.levelName}" · Minecraft ${p.map.version ?? "1.8 or older"}${p.map.needsUpgrade ? " (upgraded to 26.2 on first start)" : ""} · ${p.map.sizeMb} MB · ${p.map.source}`
+        : "The downloaded map is gone.";
+      return el(
+        "div",
+        { class: `card stack${p.status === "pending" ? " approval" : ""}` },
+        el("div", { class: "section-head" }, el("span", { class: "who" }, r.name), el("span", { class: `pill ${p.status}` }, PROPOSAL_STATE[p.status] ?? p.status)),
+        el("p", { class: "muted small" }, `${p.createdBy} · ${ago(Date.parse(p.createdAt))}`),
+        r.notes ? el("p", { class: "notes" }, r.notes) : null,
+        el("p", { class: "small" }, facts),
+        ...(p.map?.warnings ?? []).map((w) => el("p", { class: "small warn" }, w)),
+        ...(p.status === "pending" ? crossplayBlock(p, answers) : []),
+        p.result?.error ? el("p", { class: "small risk" }, p.result.error) : null,
+        p.status === "pending"
+          ? el(
+              "div",
+              { class: "row" },
+              button("Approve and build", "primary", async () => {
+                const done = await post(`/api/proposals/${p.id}/approve`, { answers });
+                toast(done.status === "approved" ? `${r.name} is ready. Start it from Worlds.` : `Couldn't build it: ${done.result?.error ?? done.status}`);
+                refresh();
+              }),
+              button("Decline", "danger", async () => {
+                await post(`/api/proposals/${p.id}/decline`);
+                toast("Declined.");
+                refresh();
+              }),
+            )
+          : null,
+      );
+    }),
+  );
+  if (open.length && location.hash === "#proposals") $("proposals").scrollIntoView();
+}
+
+// ---- maps ----------------------------------------------------------------------------------
+const slugify = (s) => s.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 31) || "map";
+
+async function loadMaps() {
+  const maps = await api("/api/maps");
+  if (!shouldRender("map-list", maps)) return;
+  $("map-list").replaceChildren(
+    ...maps.map((m) =>
+      el(
+        "div",
+        { class: "card stack" },
+        ...m.worlds.map((w, i) => {
+          const key = `${m.id}-${i}`;
+          const name = el("input", { id: `mn-${key}`, value: w.levelName.slice(0, 60), maxlength: "60", required: "" });
+          const bedrock = el("select", { id: `mb-${key}` }, el("option", { value: "yes" }, "Yes, Bedrock friends too"), el("option", { value: "no" }, "No, Java only"));
+          const form = el(
+            "div",
+            { class: "stack make", hidden: "" },
+            el("label", { class: "field", for: name.id }, "World name", name),
+            el("label", { class: "field", for: bedrock.id }, "Will Bedrock players join?", bedrock),
+            button("Make a world", "primary", async () => {
+              await post(`/api/maps/${m.id}/propose`, { root: w.root, name: name.value.trim(), slug: slugify(name.value), bedrock: bedrock.value });
+              toast("Review it under New worlds to review.");
+              await refresh();
+              $("proposals").scrollIntoView({ behavior: "smooth" });
+            }),
+          );
+          return el(
+            "div",
+            { class: "stack" },
+            el("div", { class: "section-head" }, el("span", { class: "who" }, w.levelName), el("span", { class: "pill" }, `MC ${w.version ?? "≤1.8"}`)),
+            el(
+              "p",
+              { class: "muted small" },
+              `${w.gameMode} · ${mb(w.worldBytes)} · ${m.source.kind === "url" ? new URL(m.source.url).host : m.source.filename} · added ${ago(Date.parse(m.createdAt))}`,
+            ),
+            button("Make a world…", "", async () => {
+              form.hidden = !form.hidden;
+            }),
+            form,
+          );
+        }),
+        ...m.warnings.map((w) => el("p", { class: "small warn" }, w)),
+        el(
+          "div",
+          { class: "row" },
+          button("Delete map", "danger", async () => {
+            await api(`/api/maps/${m.id}`, { method: "DELETE" });
+            toast("Map deleted. Worlds made from it stay.");
+            refresh();
+          }),
+        ),
+      ),
+    ),
+  );
+}
+
+$("map-upload").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const file = $("map-file").files[0];
+  if (!file) return;
+  const btn = e.target.querySelector("button");
+  const bar = $("map-progress");
+  btn.disabled = true;
+  bar.hidden = false;
+  const xhr = new XMLHttpRequest();
+  xhr.open("POST", `/api/maps/upload?filename=${encodeURIComponent(file.name)}`);
+  xhr.setRequestHeader("X-WorldSmith", "1");
+  xhr.setRequestHeader("Content-Type", "application/zip");
+  xhr.upload.onprogress = (ev) => ev.lengthComputable && (bar.value = ev.loaded / ev.total);
+  xhr.onloadend = () => {
+    btn.disabled = false;
+    bar.hidden = true;
+    bar.value = 0;
+    let data = {};
+    try {
+      data = JSON.parse(xhr.responseText);
+    } catch {}
+    if (xhr.status !== 200) return toast(data.error || `Upload failed (${xhr.status || "connection lost"})`);
+    $("map-file").value = "";
+    toast(`Added "${data.worlds?.[0]?.levelName ?? file.name}". Tap Make a world when you're ready.`);
+    refresh();
+  };
+  xhr.send(file);
+});
+
+$("map-link").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const btn = e.target.querySelector("button");
+  btn.disabled = true;
+  btn.textContent = "Downloading…";
+  try {
+    const m = await post("/api/maps/import", { url: $("map-url").value.trim() });
+    $("map-url").value = "";
+    toast(`Added "${m.worlds?.[0]?.levelName ?? "map"}".`);
+    refresh();
+  } catch (err) {
+    toast(err.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Download";
+  }
+});
+
 // ---- worlds --------------------------------------------------------------------------------
 const STATE_LABEL = { online: "Online", waking: "Waking up", asleep: "Asleep", missing: "Not set up", error: "Trouble" };
 
 async function loadWorlds() {
   const { worlds } = await api("/api/worlds");
+  if (!shouldRender("world-list", worlds)) return;
   $("world-list").replaceChildren(
     ...(worlds.length === 0
       ? [el("p", { class: "muted small" }, "No worlds yet.")]
@@ -455,7 +653,7 @@ async function enableNotifications(me) {
 async function refresh() {
   try {
     await loadPlayers(); // world access controls need the friends list
-    await Promise.all([loadRequests(), loadDeclined(), loadWorlds(), loadConnections()]);
+    await Promise.all([loadRequests(), loadDeclined(), loadProposals(), loadMaps(), loadWorlds(), loadConnections()]);
     await loadInvites((await api("/api/worlds")).worlds);
   } catch (e) {
     toast(e.message);
@@ -476,6 +674,6 @@ async function boot() {
 
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js");
 boot().catch((e) => toast(e.message));
-setInterval(() => document.visibilityState === "visible" && Promise.all([loadRequests(), loadConnections()]).catch(() => {}), 3000);
+setInterval(() => document.visibilityState === "visible" && Promise.all([loadRequests(), loadConnections(), loadProposals()]).catch(() => {}), 3000);
 setInterval(() => document.visibilityState === "visible" && loadWorlds().catch(() => {}), 10000);
 document.addEventListener("visibilitychange", () => document.visibilityState === "visible" && boot().catch(() => {}));

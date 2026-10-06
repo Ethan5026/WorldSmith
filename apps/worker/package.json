@@ -14,11 +14,15 @@
     "dockerode": "^4.0.7",
     "express": "^5.2.1",
     "tar-stream": "^3.1.7",
+    "yauzl": "^3.4.0",
     "zod": "^4.6.5"
   },
   "devDependencies": {
     "@types/dockerode": "^3.3.42",
     "@types/express": "^5.0.0",
-    "@types/tar-stream": "^3.1.4"
+    "@types/tar-stream": "^3.1.4",
+    "@types/yauzl": "^3.4.0",
+    "@types/yazl": "^3.3.1",
+    "yazl": "^3.3.1"
   }
 }

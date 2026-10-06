@@ -3,7 +3,7 @@
 import { randomBytes } from "node:crypto";
 import { instantiateRecipe, loadRecipes, WorldProperties, WorldSpec, type Recipe } from "@worldsmith/core";
 import { audit, type Db } from "./db.ts";
-import type { BackupInfo, WorkerClient, WorkerWorldStatus } from "./worker-client.ts";
+import type { BackupInfo, MapReport, WorkerClient, WorkerWorldStatus } from "./worker-client.ts";
 import type { AccessService } from "./access.ts";
 
 export interface WorldRow {
@@ -90,6 +90,46 @@ export class WorldService {
     if (!this.featuredSlug()) this.setFeatured(slug);
     audit(this.db, "world_created", { slug, recipe: recipeId });
     return this.view(slug);
+  }
+
+  /** Create a world from an imported public map (see the worker's map store). Doesn't start it. */
+  async createFromMap(
+    report: MapReport,
+    root: string,
+    opts: { slug: string; name: string; bedrock: boolean; gamemode?: WorldProperties["gamemode"]; difficulty?: WorldProperties["difficulty"] },
+  ): Promise<WorldView> {
+    const map = report.worlds.find((w) => w.root === root);
+    if (!map) throw new Error(`That import has no world at "${root}".`);
+    const recipe = this.recipes.get("map");
+    if (!recipe) throw new Error("The map recipe is missing.");
+    if (this.row(opts.slug)) throw new Error(`A world called "${opts.slug}" already exists.`);
+    const difficulty = WorldProperties.shape.difficulty.safeParse(map.difficulty);
+    const spec = instantiateRecipe(recipe, {
+      slug: opts.slug,
+      name: opts.name,
+      properties: {
+        // Spectator-mode maps are showcases; let people walk around instead.
+        gamemode: opts.gamemode ?? (map.gameMode === "spectator" ? "adventure" : map.gameMode),
+        difficulty: opts.difficulty ?? (difficulty.success ? difficulty.data : undefined),
+        hardcore: map.hardcore,
+      },
+    });
+    spec.crossplay = { bedrock: opts.bedrock };
+    spec.upgradeWorld = map.needsUpgrade;
+    this.db
+      .prepare("INSERT INTO worlds (slug, name, recipe, spec, created_at) VALUES (?, ?, ?, ?, ?)")
+      .run(opts.slug, opts.name, "map", JSON.stringify(spec), Date.now());
+    try {
+      await this.worker.apply(spec, randomBytes(24).toString("base64url"), this.access.accessFiles(opts.slug));
+      await this.worker.installMap(opts.slug, report.id, root);
+    } catch (err) {
+      this.db.prepare("DELETE FROM worlds WHERE slug = ?").run(opts.slug);
+      await this.worker.remove(opts.slug, true).catch(() => undefined);
+      throw err;
+    }
+    if (!this.featuredSlug()) this.setFeatured(opts.slug);
+    audit(this.db, "world_created", { slug: opts.slug, recipe: "map", map: report.id, level: map.levelName, version: map.version ?? null });
+    return this.view(opts.slug);
   }
 
   /** Adopt a world that already exists on the worker (created before the hub tracked it). */
@@ -186,6 +226,15 @@ export class WorldService {
     const r = this.row(slug);
     if (r && (r.last_active_at ?? 0) > (r.last_backup_at ?? 0)) {
       await this.backup(slug, "sleep").catch((err) => console.error("backup on sleep failed", slug, err));
+    }
+    // An imported map upgrades on its first start; after that, start normally (upgrading is slow).
+    const spec = this.spec(slug);
+    if (spec.upgradeWorld) {
+      spec.upgradeWorld = false;
+      this.db.prepare("UPDATE worlds SET spec = ? WHERE slug = ?").run(JSON.stringify(spec), slug);
+      await this.worker
+        .apply(spec, randomBytes(24).toString("base64url"), this.access.accessFiles(slug))
+        .catch((err) => console.error("clearing the upgrade flag failed", slug, err));
     }
   }
 

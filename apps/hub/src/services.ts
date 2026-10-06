@@ -4,6 +4,7 @@ import type { Push } from "./push.ts";
 import type { WorkerClient } from "./worker-client.ts";
 import type { Settings } from "./settings.ts";
 import type { BuildService } from "./builds.ts";
+import type { ProposalService } from "./proposals.ts";
 
 /** Shared services handed to the HTTP apps and the MCP server. */
 export interface HubServices {
@@ -13,4 +14,5 @@ export interface HubServices {
   worker: WorkerClient;
   settings: Settings;
   builds: BuildService;
+  proposals: ProposalService;
 }

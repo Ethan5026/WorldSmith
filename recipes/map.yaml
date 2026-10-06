@@ -1,0 +1,19 @@
+# A downloaded public map (adventure, hunger games, parkour…) on Paper. WorldSmith fills in the
+# game mode and difficulty from the map's own level.dat when the world is created.
+id: map
+name: Downloaded map
+description: A public map imported from a link or an upload, ready to edit with the builder.
+tags: ["Java + Bedrock", "No install needed"]
+spec:
+  minecraft: { version: "26.2", protocol: 776, type: PAPER }
+  memoryMb: 3072
+  crossplay: { bedrock: true }
+  properties:
+    difficulty: normal
+    gamemode: adventure
+    viewDistance: 10
+    simulationDistance: 8
+    spawnProtection: 0
+    enableCommandBlock: true
+  gamerules:
+    command_blocks_work: true
