@@ -18,6 +18,38 @@ export interface BackupInfo {
   bytes: number;
 }
 
+export interface RenderRequest {
+  dimension?: string;
+  x1: number;
+  z1: number;
+  x2: number;
+  z2: number;
+  scale?: number;
+  maxY?: number;
+  grid?: boolean;
+  markers?: { x: number; z: number; color?: [number, number, number] }[];
+}
+
+export interface RenderFeature {
+  block: string;
+  x: number;
+  y: number;
+  z: number;
+  detail?: string;
+}
+
+export interface RenderResponse {
+  pngBase64: string;
+  width: number;
+  height: number;
+  scale: number;
+  gridStep: number;
+  regionDir: string;
+  flushed: boolean;
+  stats: { minY: number; maxY: number; missingChunks: number; topBlocks: [string, number][]; seeThrough: [string, number][] };
+  features: RenderFeature[];
+}
+
 export class WorkerClient {
   base: URL;
   token: string;
@@ -74,6 +106,9 @@ export class WorkerClient {
   }
   restore(slug: string, id: string): Promise<{ safetyBackup: BackupInfo }> {
     return this.call("POST", `/worlds/${slug}/restore`, { id }, 900_000);
+  }
+  render(slug: string, req: RenderRequest): Promise<RenderResponse> {
+    return this.call("POST", `/worlds/${slug}/render`, req, 120_000);
   }
   logs(slug: string, tail = 200): Promise<string> {
     return this.call("GET", `/worlds/${slug}/logs?tail=${tail}`);

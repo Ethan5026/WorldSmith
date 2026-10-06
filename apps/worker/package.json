@@ -10,6 +10,7 @@
   "dependencies": {
     "@worldsmith/core": "workspace:*",
     "@worldsmith/mcproto": "workspace:*",
+    "@worldsmith/mcworld": "workspace:*",
     "dockerode": "^4.0.7",
     "express": "^5.2.1",
     "tar-stream": "^3.1.7",

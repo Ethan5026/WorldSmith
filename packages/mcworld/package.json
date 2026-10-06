@@ -1,0 +1,10 @@
+{
+  "name": "@worldsmith/mcworld",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Minecraft world files: NBT read/write, region/chunk reading, top-down map rendering.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  }
+}

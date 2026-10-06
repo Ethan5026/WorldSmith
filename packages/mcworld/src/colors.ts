@@ -1,0 +1,156 @@
+// Map colors for blocks, close to how they look from above. Exact entries for common blocks, then
+// name-based rules (dye colors, materials) so new or modded blocks still get a sensible color.
+
+export type RGB = [number, number, number];
+
+const EXACT: Record<string, RGB> = {
+  grass_block: [109, 153, 48],
+  short_grass: [109, 153, 48],
+  tall_grass: [109, 153, 48],
+  fern: [96, 140, 44],
+  dirt: [134, 96, 67],
+  coarse_dirt: [119, 85, 59],
+  rooted_dirt: [144, 103, 76],
+  podzol: [91, 63, 24],
+  mycelium: [111, 99, 105],
+  dirt_path: [148, 121, 65],
+  farmland: [81, 44, 15],
+  mud: [60, 57, 60],
+  clay: [160, 166, 179],
+  gravel: [131, 127, 126],
+  sand: [219, 207, 163],
+  red_sand: [190, 102, 33],
+  sandstone: [216, 203, 155],
+  stone: [125, 125, 125],
+  cobblestone: [127, 127, 127],
+  mossy_cobblestone: [110, 118, 94],
+  smooth_stone: [158, 158, 158],
+  stone_bricks: [122, 121, 122],
+  andesite: [136, 136, 136],
+  polished_andesite: [132, 135, 133],
+  diorite: [188, 188, 188],
+  granite: [149, 103, 85],
+  deepslate: [80, 80, 82],
+  tuff: [108, 109, 102],
+  calcite: [223, 224, 220],
+  bedrock: [85, 85, 85],
+  obsidian: [15, 10, 24],
+  netherrack: [97, 38, 38],
+  end_stone: [219, 222, 158],
+  water: [63, 118, 228],
+  lava: [207, 92, 15],
+  ice: [145, 183, 253],
+  packed_ice: [141, 180, 250],
+  blue_ice: [116, 167, 253],
+  snow: [249, 254, 254],
+  snow_block: [249, 254, 254],
+  powder_snow: [248, 253, 253],
+  glass: [175, 213, 219],
+  oak_leaves: [59, 122, 25],
+  spruce_leaves: [55, 89, 55],
+  birch_leaves: [92, 133, 52],
+  jungle_leaves: [48, 139, 20],
+  acacia_leaves: [70, 127, 20],
+  dark_oak_leaves: [50, 108, 18],
+  mangrove_leaves: [62, 120, 30],
+  cherry_leaves: [229, 172, 194],
+  azalea_leaves: [90, 116, 44],
+  pale_oak_leaves: [130, 140, 120],
+  lily_pad: [32, 128, 48],
+  seagrass: [40, 100, 60],
+  kelp: [70, 110, 50],
+  oak_planks: [162, 130, 78],
+  spruce_planks: [114, 84, 48],
+  birch_planks: [192, 175, 121],
+  jungle_planks: [160, 115, 80],
+  acacia_planks: [168, 90, 50],
+  dark_oak_planks: [66, 43, 20],
+  cherry_planks: [226, 178, 172],
+  bricks: [150, 97, 83],
+  terracotta: [152, 94, 67],
+  quartz_block: [235, 229, 222],
+  gold_block: [246, 208, 61],
+  iron_block: [220, 220, 220],
+  diamond_block: [98, 237, 228],
+  emerald_block: [42, 203, 87],
+  redstone_block: [175, 24, 5],
+  lapis_block: [30, 67, 140],
+  coal_block: [16, 15, 15],
+  tnt: [200, 60, 40],
+  chest: [164, 116, 47],
+  barrel: [134, 100, 58],
+  hay_block: [166, 136, 38],
+  pumpkin: [198, 118, 24],
+  melon: [111, 145, 30],
+  cactus: [85, 127, 43],
+  sugar_cane: [148, 192, 101],
+  bamboo: [93, 144, 19],
+  torch: [255, 210, 80],
+  lantern: [255, 200, 90],
+  glowstone: [252, 200, 110],
+  sea_lantern: [172, 199, 190],
+  command_block: [181, 136, 108],
+  chain_command_block: [131, 161, 147],
+  repeating_command_block: [129, 111, 176],
+  air: [0, 0, 0],
+};
+
+const DYES: Record<string, RGB> = {
+  white: [234, 236, 237],
+  light_gray: [142, 142, 135],
+  gray: [62, 68, 71],
+  black: [21, 21, 26],
+  brown: [114, 72, 41],
+  red: [161, 39, 35],
+  orange: [240, 118, 19],
+  yellow: [248, 198, 39],
+  lime: [112, 185, 26],
+  green: [84, 109, 27],
+  cyan: [21, 137, 145],
+  light_blue: [58, 175, 217],
+  blue: [53, 57, 157],
+  purple: [121, 42, 172],
+  magenta: [189, 68, 179],
+  pink: [237, 141, 172],
+};
+
+const RULES: [RegExp, RGB][] = [
+  [/water|bubble/, EXACT.water!],
+  [/lava|magma/, EXACT.lava!],
+  [/leaves/, EXACT.oak_leaves!],
+  [/grass|fern|vine|moss|sapling|bush|azalea/, EXACT.grass_block!],
+  [/flower|tulip|poppy|dandelion|orchid|allium|bluet|daisy|rose|lilac|peony|cornflower|lily/, [200, 120, 160]],
+  [/log|wood|stem|hyphae/, [102, 81, 51]],
+  [/planks|slab|stairs|fence|door|trapdoor|sign|button|pressure_plate/, EXACT.oak_planks!],
+  [/glass/, EXACT.glass!],
+  [/sand/, EXACT.sand!],
+  [/snow|powder/, EXACT.snow!],
+  [/ice/, EXACT.ice!],
+  [/deepslate|blackstone|basalt/, EXACT.deepslate!],
+  [/nether|crimson|warped/, EXACT.netherrack!],
+  [/copper/, [192, 107, 79]],
+  [/prismarine/, [99, 171, 158]],
+  [/purpur/, [169, 125, 169]],
+  [/ore/, EXACT.stone!],
+  [/brick|stone|cobble|andesite|diorite|granite|tuff/, EXACT.stone!],
+  [/dirt|mud|soil/, EXACT.dirt!],
+  [/rail/, [120, 110, 100]],
+  [/carpet|wool|concrete|terracotta|bed|candle|banner|shulker|glazed/, [200, 200, 200]],
+];
+
+const cache = new Map<string, RGB>();
+
+/** Color for a block id like "minecraft:oak_planks" (properties ignored). */
+export function blockColor(id: string): RGB {
+  const name = id.replace(/^minecraft:/, "").replace(/\[.*$/, "");
+  const hit = cache.get(name);
+  if (hit) return hit;
+  let c = EXACT[name];
+  if (!c) {
+    const dye = Object.keys(DYES).sort((a, b) => b.length - a.length).find((d) => name.startsWith(`${d}_`));
+    if (dye) c = DYES[dye];
+  }
+  if (!c) c = RULES.find(([re]) => re.test(name))?.[1] ?? [150, 150, 150];
+  cache.set(name, c);
+  return c;
+}

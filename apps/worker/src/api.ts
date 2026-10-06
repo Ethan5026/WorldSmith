@@ -68,6 +68,28 @@ export function createWorkerApp(runtime: WorldRuntime, token: string): express.E
       return { outputs: await runtime.rcon(slugOf(req), commands) };
     }),
   );
+  app.post(
+    "/worlds/:slug/render",
+    handle(async (req) => {
+      const Int = z.number().int().min(-30_000_000).max(30_000_000);
+      const Byte = z.number().int().min(0).max(255);
+      const input = z
+        .object({
+          dimension: z.string().regex(/^([a-z0-9_.-]+:)?[a-z0-9_.-]+$/).default("minecraft:overworld"),
+          x1: Int,
+          z1: Int,
+          x2: Int,
+          z2: Int,
+          scale: z.number().int().min(1).max(8).optional(),
+          maxY: z.number().int().min(-2048).max(2048).optional(),
+          grid: z.boolean().optional(),
+          markers: z.array(z.object({ x: Int, z: Int, color: z.tuple([Byte, Byte, Byte]).optional() })).max(50).optional(),
+        })
+        .parse(req.body);
+      if (input.dimension.includes("..")) throw new BadRequest("bad dimension");
+      return runtime.render(slugOf(req), input);
+    }),
+  );
   app.get("/worlds/:slug/backups", handle(async (req) => runtime.listBackups(slugOf(req))));
   app.post(
     "/worlds/:slug/backups",

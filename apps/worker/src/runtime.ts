@@ -15,6 +15,7 @@ import {
 import { RconClient, statusPing, descriptionText } from "@worldsmith/mcproto";
 import { buildTar, resolveFile, type ResolvedFile } from "./files.ts";
 import { Backups, isBackupId, type BackupInfo } from "./backups.ts";
+import { renderContainerArea, type RenderInput, type RenderOutput } from "./render.ts";
 
 const MANAGED_LABEL = "worldsmith.world";
 const RCON_PORT = 25575;
@@ -254,6 +255,20 @@ export class WorldRuntime {
     } finally {
       await helper.remove({ force: true });
     }
+  }
+
+  /** Top-down map of an area. Running worlds save first so the picture includes recent changes. */
+  async render(slug: string, input: RenderInput): Promise<RenderOutput & { flushed: boolean }> {
+    const info = await this.inspect(slug);
+    if (!info) throw new Error(`World ${slug} does not exist`);
+    let flushed = false;
+    if (info.State.Running) {
+      flushed = await this.rcon(slug, ["save-all flush"]).then(
+        () => true,
+        () => false, // still starting up: render what's on disk
+      );
+    }
+    return { ...(await renderContainerArea(this.container(slug), input)), flushed };
   }
 
   async logs(slug: string, tail: number): Promise<string> {

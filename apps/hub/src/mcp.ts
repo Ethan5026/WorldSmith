@@ -66,7 +66,8 @@ export function createMcpServer(config: Config, services: HubServices, clientId?
         "Minecraft 26.x differs from older versions you may remember: game rules are snake_case and some were renamed " +
         "(keep_inventory, advance_time, spawn_mobs; pvp is a game rule) — check minecraft_reference; text components in " +
         "commands are SNBT like {text:'Hi',color:'gold'}; a bare number in `worldborder set <size> <time>` is game TICKS, " +
-        "so always write a unit (300s); command blocks need enable-command-block and the command_blocks_work game rule.",
+        "so always write a unit (300s); command blocks need enable-command-block and the command_blocks_work game rule. " +
+        "Use view_area to look at the world: before building (to find a clear spot) and after (to check the result).",
     },
   );
   const slugArg = z.string().regex(/^[a-z0-9][a-z0-9-]{1,30}$/).optional().describe("World slug; defaults to the featured world");
@@ -211,6 +212,72 @@ export function createMcpServer(config: Config, services: HubServices, clientId?
       if (!nums) return { isError: true, content: [{ type: "text" as const, text: `${player} isn't online in this world. (${(pos ?? "").slice(0, 120)})` }] };
       const block = [Math.floor(Number(nums[1])), Math.floor(Number(nums[2])), Math.floor(Number(nums[3]))];
       return json({ player, block, dimension: /"([^"]+)"/.exec(dim ?? "")?.[1] ?? "unknown" });
+    },
+  );
+
+  const MARKER_COLORS = { red: [230, 40, 40], blue: [40, 110, 240], yellow: [250, 210, 30], white: [255, 255, 255], magenta: [220, 50, 220] } as const;
+  const Coord = z.number().int().min(-30_000_000).max(30_000_000);
+  server.registerTool(
+    "view_area",
+    {
+      title: "See an area (top-down map)",
+      description:
+        "A top-down picture of part of a world, read from its saved files (works while the world sleeps; a running world " +
+        "saves first so recent builds show). North is up and +x is to the right; dashed grid lines are labeled with x along " +
+        "the top edge and z down the left edge. Glass is drawn see-through and water is shaded by depth. Set maxY to cut " +
+        "the world off above that height, e.g. a floor's y + 3 to see a building's floor plan under its roof. Also lists " +
+        "chests (with contents or loot table), signs (text), command blocks (commands) and other block entities in the " +
+        "area. Give a center with a radius, two corners, or a player to look around. Up to 512×512 blocks per picture.",
+      inputSchema: {
+        slug: slugArg,
+        around: z.string().regex(/^\.?[A-Za-z0-9_]{1,16}$/).optional().describe("Online player to center on (marked blue)"),
+        center: z.object({ x: Coord, z: Coord }).optional(),
+        radius: z.number().int().min(4).max(256).default(32),
+        corners: z.object({ x1: Coord, z1: Coord, x2: Coord, z2: Coord }).optional().describe("Exact area instead of center/radius"),
+        dimension: z.string().regex(/^([a-z0-9_.-]+:)?[a-z0-9_.-]+$/).default("minecraft:overworld"),
+        maxY: z.number().int().min(-2048).max(2048).optional(),
+        scale: z.number().int().min(1).max(8).optional().describe("Pixels per block; default fits about 768 px"),
+        markers: z
+          .array(z.object({ x: Coord, z: Coord, color: z.enum(["red", "blue", "yellow", "white", "magenta"]).default("red") }))
+          .max(20)
+          .optional()
+          .describe("Crosses drawn at positions, e.g. where you plan to build"),
+      },
+      annotations: { readOnlyHint: true },
+    },
+    async ({ slug, around, center, radius, corners, dimension, maxY, scale, markers }) => {
+      const s = resolve(slug);
+      const marks = (markers ?? []).map((m) => ({ x: m.x, z: m.z, color: [...MARKER_COLORS[m.color]] as [number, number, number] }));
+      let area = corners;
+      let dim = dimension;
+      if (around) {
+        const [pos, d] = await services.worker.rcon(s, [`data get entity ${around} Pos`, `data get entity ${around} Dimension`]);
+        const nums = /\[(-?[\d.]+)d?, (-?[\d.]+)d?, (-?[\d.]+)d?\]/.exec(pos ?? "");
+        if (!nums) return { isError: true, content: [{ type: "text" as const, text: `${around} isn't online in this world.` }] };
+        center = { x: Math.floor(Number(nums[1])), z: Math.floor(Number(nums[3])) };
+        dim = /"([^"]+)"/.exec(d ?? "")?.[1] ?? dim;
+        marks.push({ x: center.x, z: center.z, color: [...MARKER_COLORS.blue] as [number, number, number] });
+      }
+      if (!area && center) area = { x1: center.x - radius, z1: center.z - radius, x2: center.x + radius, z2: center.z + radius };
+      if (!area) return { isError: true, content: [{ type: "text" as const, text: "Say where to look: around (a player), center + radius, or corners." }] };
+      const r = await services.worker.render(s, { dimension: dim, ...area, maxY, scale, markers: marks });
+      const [x1, x2] = [Math.min(area.x1, area.x2), Math.max(area.x1, area.x2)];
+      const [z1, z2] = [Math.min(area.z1, area.z2), Math.max(area.z1, area.z2)];
+      const lines = [
+        `${dim} x ${x1}..${x2}, z ${z1}..${z2} at ${r.scale} px per block (north is up)${maxY !== undefined ? `, cut at y ${maxY}` : ""}. Grid every ${r.gridStep} blocks.`,
+        `Ground/top y ranges ${r.stats.minY}..${r.stats.maxY}.${r.stats.missingChunks ? ` ${r.stats.missingChunks} chunk(s) not generated yet (checkered).` : ""}${r.flushed ? "" : " (World not running: showing the last save.)"}`,
+        `Top surface blocks: ${r.stats.topBlocks.map(([b, n]) => `${b} ${n}`).join(", ") || "none"}.`,
+        ...(r.stats.seeThrough.length ? [`Seen through: ${r.stats.seeThrough.map(([b, n]) => `${b} ${n}`).join(", ")}.`] : []),
+        ...(r.features.length
+          ? [`Block entities (${r.features.length}${r.features.length === 100 ? ", first 100" : ""}):`, ...r.features.map((f) => `- ${f.block} at ${f.x} ${f.y} ${f.z}${f.detail ? `: ${f.detail}` : ""}`)]
+          : ["No chests, signs or command blocks here."]),
+      ];
+      return {
+        content: [
+          { type: "image" as const, data: r.pngBase64, mimeType: "image/png" },
+          { type: "text" as const, text: lines.join("\n") },
+        ],
+      };
     },
   );
 

@@ -60,6 +60,9 @@ importers:
       '@worldsmith/mcproto':
         specifier: workspace:*
         version: link:../../packages/mcproto
+      '@worldsmith/mcworld':
+        specifier: workspace:*
+        version: link:../../packages/mcworld
       dockerode:
         specifier: ^4.0.7
         version: 4.0.12
@@ -98,6 +101,8 @@ importers:
   packages/mcdata: {}
 
   packages/mcproto: {}
+
+  packages/mcworld: {}
 
 packages:
 
