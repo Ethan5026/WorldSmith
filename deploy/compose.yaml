@@ -83,14 +83,20 @@ services:
     depends_on: [hub]
     environment:
       GK_PORT: "25565"
+      GK_LAN_PORTS: "25570-25579"
       GK_HUB_SOCKET: /ipc/hub.sock
     volumes:
       - hub-ipc:/ipc
     # worlds: to pipe players to world containers. No Docker socket, no secrets.
     networks: [default, worlds]
     ports:
-      - "127.0.0.1:25565:25565" # local testing from this PC only; friends come in via playit
-      - "127.0.0.1:19132:19132/udp" # Geyser (Bedrock), same: local testing only
+      - "127.0.0.1:25565:25565" # this PC only; friends on the internet come in via playit
+      # Wi-Fi play: one port per world with it turned on (a port no world uses hangs up at once).
+      # Same gatekeeper, same approvals and per-world access as joining over the internet.
+      - "25570-25579:25570-25579"
+      # Geyser (Bedrock) on the home network too, so Bedrock's "LAN Games" tab finds the featured
+      # world (Bedrock only discovers servers on port 19132).
+      - "19132:19132/udp"
 
   playit:
     profiles: [hub]
@@ -109,6 +115,8 @@ services:
 
   # Bedrock players: Geyser shares the gatekeeper's network namespace, so its Java target
   # 127.0.0.1:25565 IS the gatekeeper, and playit's Bedrock tunnel reaches it at 127.0.0.1:19132.
+  # Recreating the gatekeeper strands playit and geyser in the old namespace: when deploying a
+  # gatekeeper change, include them (`up -d --build gatekeeper playit geyser`, or no names at all).
   geyser:
     <<: *hardening
     profiles: [hub]

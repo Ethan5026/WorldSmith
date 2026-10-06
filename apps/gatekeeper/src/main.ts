@@ -1,4 +1,5 @@
-// WorldSmith gatekeeper: the one address friends connect to (via playit).
+// WorldSmith gatekeeper: the one address friends connect to (via playit), plus one port per world
+// with Wi-Fi play on (people on the home network pick a world by port).
 //
 //   status ping    → MOTD + version from the hub (cached briefly)
 //   login attempt  → hub decides: pipe to the world, or kick with a friendly message
@@ -25,6 +26,15 @@ import {
 } from "@worldsmith/mcproto";
 
 const LISTEN_PORT = Number(process.env.GK_PORT ?? 25565);
+/** Wi-Fi (LAN) ports, e.g. "25570-25579". The hub says which world each one leads to. */
+const LAN_PORTS = parsePorts(process.env.GK_LAN_PORTS ?? "");
+
+function parsePorts(spec: string): number[] {
+  const m = /^(\d+)-(\d+)$/.exec(spec.trim());
+  if (!m) return [];
+  const [from, to] = [Number(m[1]), Number(m[2])];
+  return to >= from && to - from < 64 ? Array.from({ length: to - from + 1 }, (_, i) => from + i) : [];
+}
 const HUB_SOCKET = process.env.GK_HUB_SOCKET ?? "/ipc/hub.sock";
 const PRELOGIN_TIMEOUT_MS = 10_000;
 /** Only world containers on the internal network may be piped to. */
@@ -65,12 +75,15 @@ interface StatusAnswer {
 }
 type LoginDecision = { action: "pipe"; backend: string } | { action: "kick"; reason: TextComponent };
 
-let statusCache: { at: number; value: StatusAnswer } | undefined;
-async function hubStatus(protocol: number): Promise<StatusAnswer> {
-  if (statusCache && Date.now() - statusCache.at < 2000) return statusCache.value;
+const statusCache = new Map<number, { at: number; value: StatusAnswer | null }>();
+/** The server-list answer for a port, or null when no world uses that Wi-Fi port. */
+async function hubStatus(protocol: number, port: number): Promise<StatusAnswer | null> {
+  const hit = statusCache.get(port);
+  if (hit && Date.now() - hit.at < 2000) return hit.value;
   try {
-    const value = await askHub<StatusAnswer>("/gate/status", { protocol });
-    statusCache = { at: Date.now(), value };
+    const answer = await askHub<StatusAnswer | { closed: true }>("/gate/status", { protocol, port });
+    const value = "closed" in answer ? null : answer;
+    statusCache.set(port, { at: Date.now(), value });
     return value;
   } catch {
     return {
@@ -82,7 +95,7 @@ async function hubStatus(protocol: number): Promise<StatusAnswer> {
   }
 }
 
-function handle(client: net.Socket): void {
+function handle(client: net.Socket, port: number): void {
   const remote = `${client.remoteAddress}:${client.remotePort}`;
   client.setNoDelay(true);
   client.setTimeout(PRELOGIN_TIMEOUT_MS, () => client.destroy());
@@ -108,6 +121,7 @@ function handle(client: net.Socket): void {
         platform: h.floodgate ? "bedrock" : "java",
         // Encrypted Bedrock identity from Geyser; only the hub holds the key to read it.
         floodgate: h.floodgate ? h.rawServerAddress : undefined,
+        port,
       });
     } catch (err) {
       log("hub_unreachable", { remote, error: (err as Error).message });
@@ -121,9 +135,9 @@ function handle(client: net.Socket): void {
       log("bad_backend", { remote, backend: decision.backend });
       return kick({ text: "Something went wrong. Try again in a minute.", color: "red" });
     }
-    const [host, port] = decision.backend.split(":");
+    const [backendHost, backendPort] = decision.backend.split(":");
     log("pipe", { remote, username, backend: decision.backend });
-    const upstream = net.connect({ host: host!, port: Number(port) });
+    const upstream = net.connect({ host: backendHost!, port: Number(backendPort) });
     upstream.setNoDelay(true);
     upstream.on("connect", () => {
       client.setTimeout(0);
@@ -158,7 +172,8 @@ function handle(client: net.Socket): void {
             // so the pong can never overtake the status response.
             const proto = handshake?.protocolVersion ?? 0;
             client.pause();
-            void hubStatus(proto).then((s) => {
+            void hubStatus(proto, port).then((s) => {
+              if (!s) return void client.destroy();
               client.write(
                 encodeStatusResponse({ version: { name: s.versionName, protocol: s.protocol }, players: s.players, description: s.motd }),
               );
@@ -185,4 +200,6 @@ function handle(client: net.Socket): void {
   client.on("data", onData);
 }
 
-net.createServer(handle).listen(LISTEN_PORT, "0.0.0.0", () => log("listening", { port: LISTEN_PORT, hub: HUB_SOCKET }));
+for (const port of [LISTEN_PORT, ...LAN_PORTS]) {
+  net.createServer((c) => handle(c, port)).listen(port, "0.0.0.0", () => log("listening", { port, lan: port !== LISTEN_PORT, hub: HUB_SOCKET }));
+}

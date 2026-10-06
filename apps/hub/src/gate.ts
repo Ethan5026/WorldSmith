@@ -9,7 +9,7 @@ import { decodeFloodgate, floodgatePayload } from "./floodgate.ts";
 import { floodgateUuid } from "./mojang.ts";
 import { audit, type Db } from "./db.ts";
 import type { AccessService } from "./access.ts";
-import type { WorldService } from "./worlds.ts";
+import { LAN_PORTS, type WorldService } from "./worlds.ts";
 import type { Push } from "./push.ts";
 
 export type LoginDecision = { action: "pipe"; backend: string } | { action: "kick"; reason: TextComponent };
@@ -42,8 +42,19 @@ export class GateService {
     this.floodgateKey = floodgateKey;
   }
 
-  async status(clientProtocol: number): Promise<StatusAnswer> {
-    const slug = this.worlds.featuredSlug();
+  /**
+   * Which world a connection is for. The main port (playit, this PC) leads to the featured world;
+   * each Wi-Fi port leads to the one world it was given.
+   */
+  private target(port?: number): { slug: string | undefined; lan: boolean } {
+    if (port !== undefined && LAN_PORTS.includes(port)) return { slug: this.worlds.slugForLanPort(port), lan: true };
+    return { slug: this.worlds.featuredSlug(), lan: false };
+  }
+
+  /** Server-list answer, or null for a Wi-Fi port no world uses (the gatekeeper hangs up). */
+  async status(clientProtocol: number, port?: number): Promise<StatusAnswer | null> {
+    const { slug, lan } = this.target(port);
+    if (lan && !slug) return null;
     if (!slug) {
       return {
         versionName: "WorldSmith",
@@ -63,7 +74,7 @@ export class GateService {
     return {
       versionName: w.version,
       protocol: w.protocol,
-      motd: lines({ text: "WorldSmith ", color: "gold", bold: true }, { text: `· ${w.name}\n`, color: "white" }, stateLine[w.state]!),
+      motd: lines({ text: "WorldSmith ", color: "gold", bold: true }, { text: `· ${w.name}${lan ? " (Wi-Fi)" : ""}\n`, color: "white" }, stateLine[w.state]!),
       players: w.players,
     };
   }
@@ -75,6 +86,8 @@ export class GateService {
     host: string;
     platform?: "java" | "bedrock";
     floodgate?: string;
+    /** Gatekeeper port the player connected to (Wi-Fi ports pick their world). */
+    port?: number;
   }): Promise<LoginDecision> {
     const platform = input.platform ?? "java";
     let verifiedBedrock: { gamertag: string; xuid: string } | undefined;
@@ -98,8 +111,9 @@ export class GateService {
       }
     }
     const who = platform === "bedrock" ? `${input.username} (Bedrock)` : input.username;
-    const slug = this.worlds.featuredSlug();
+    const { slug, lan } = this.target(input.port);
     const kick = (reason: TextComponent): LoginDecision => ({ action: "kick", reason });
+    if (!slug && lan) return kick({ text: `Wi-Fi play is off for this world now. Ask ${this.ownerName} to turn it on in WorldSmith.`, color: "yellow" });
     if (!slug) return kick({ text: `No world is open right now. Ask ${this.ownerName} to open one.`, color: "yellow" });
     if (!isValidUsername(input.username)) return kick({ text: "That isn't a valid Minecraft username.", color: "red" });
 
@@ -214,6 +228,7 @@ const LoginInput = z.object({
   host: z.string().max(300),
   platform: z.enum(["java", "bedrock"]).default("java"),
   floodgate: z.string().max(3200).optional(),
+  port: z.number().int().min(1).max(65535).optional(),
 });
 
 /** Gatekeeper ↔ hub API on a Unix socket in a shared volume (never on a network). */
@@ -223,7 +238,8 @@ export function listenGate(gate: GateService, socketPath: string): void {
   app.use(express.json({ limit: "8kb" }));
   app.post("/gate/status", async (req, res) => {
     try {
-      res.json(await gate.status(Number(req.body?.protocol ?? 0)));
+      const port = req.body?.port === undefined ? undefined : Number(req.body.port);
+      res.json((await gate.status(Number(req.body?.protocol ?? 0), port)) ?? { closed: true });
     } catch (err) {
       console.error("gate status failed", err);
       res.status(500).json({ error: "status unavailable" });

@@ -2,7 +2,7 @@
 
 import type { Db } from "./db.ts";
 
-export const SETTING_KEYS = ["java_address", "bedrock_address"] as const;
+export const SETTING_KEYS = ["java_address", "bedrock_address", "lan_address"] as const;
 export type SettingKey = (typeof SETTING_KEYS)[number];
 
 export class Settings {

@@ -15,7 +15,11 @@ export interface WorldRow {
   last_active_at: number | null;
   last_backup_at: number | null;
   only_with_me: number;
+  lan_port: number | null;
 }
+
+/** Ports the gatekeeper opens on the home network, one per world with Wi-Fi play on. */
+export const LAN_PORTS = Array.from({ length: 10 }, (_, i) => 25570 + i);
 
 const PERIODIC_BACKUP_MS = 6 * 60 * 60 * 1000;
 
@@ -32,6 +36,8 @@ export interface WorldView {
   protocol: number;
   players: { online: number; max: number };
   backend: string;
+  /** Port people on the home network use for this world (null = Wi-Fi play off). */
+  lanPort: number | null;
 }
 
 const STATUS_TTL_MS = 3000;
@@ -70,6 +76,28 @@ export class WorldService {
     if (!this.row(slug)) throw new Error(`No world called "${slug}".`);
     this.db.prepare("INSERT INTO settings (key, value) VALUES ('featured_world', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(slug);
     audit(this.db, "world_featured", { slug });
+  }
+
+  /** Turn Wi-Fi (LAN) play on or off: a world with it on gets its own port on the home network. */
+  setLan(slug: string, on: boolean): number | null {
+    const r = this.row(slug);
+    if (!r) throw new Error(`No world called "${slug}".`);
+    if (!on) {
+      this.db.prepare("UPDATE worlds SET lan_port = NULL WHERE slug = ?").run(slug);
+      if (r.lan_port !== null) audit(this.db, "world_lan", { slug, port: null });
+      return null;
+    }
+    if (r.lan_port !== null) return r.lan_port;
+    const used = new Set((this.db.prepare("SELECT lan_port FROM worlds WHERE lan_port IS NOT NULL").all() as { lan_port: number }[]).map((x) => x.lan_port));
+    const port = LAN_PORTS.find((p) => !used.has(p));
+    if (port === undefined) throw new Error(`Wi-Fi play is on for ${LAN_PORTS.length} worlds already. Turn it off for one first.`);
+    this.db.prepare("UPDATE worlds SET lan_port = ? WHERE slug = ?").run(port, slug);
+    audit(this.db, "world_lan", { slug, port });
+    return port;
+  }
+
+  slugForLanPort(port: number): string | undefined {
+    return (this.db.prepare("SELECT slug FROM worlds WHERE lan_port = ?").get(port) as { slug: string } | undefined)?.slug;
   }
 
   /** Create a world from a recipe and set it up on the worker (doesn't start it). */
@@ -200,6 +228,7 @@ export class WorldService {
       protocol: spec.minecraft.protocol,
       players: s.mc?.online ? s.mc.players : { online: 0, max: 20 },
       backend: s.backend,
+      lanPort: r.lan_port ?? null,
     };
   }
 

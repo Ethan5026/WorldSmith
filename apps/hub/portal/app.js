@@ -323,8 +323,9 @@ $("map-link").addEventListener("submit", async (e) => {
 const STATE_LABEL = { online: "Online", waking: "Waking up", asleep: "Asleep", missing: "Not set up", error: "Trouble" };
 
 async function loadWorlds() {
-  const { worlds } = await api("/api/worlds");
-  if (!shouldRender("world-list", worlds)) return;
+  const [{ worlds }, settings] = await Promise.all([api("/api/worlds"), api("/api/settings")]);
+  const lanAddress = settings.lan_address || "this computer's Wi-Fi address";
+  if (!shouldRender("world-list", { worlds, lanAddress })) return;
   $("world-list").replaceChildren(
     ...(worlds.length === 0
       ? [el("p", { class: "muted small" }, "No worlds yet.")]
@@ -343,6 +344,30 @@ async function loadWorlds() {
           );
           const players = w.state === "online" ? ` · ${w.players.online} playing` : "";
           const accessBox = el("div", { class: "stack access" });
+          const wifi = el("input", { type: "checkbox", id: `lan-${w.slug}` });
+          wifi.checked = w.lanPort !== null;
+          wifi.addEventListener("change", async () => {
+            try {
+              const v = await api(`/api/worlds/${w.slug}/lan`, { method: "PUT", body: JSON.stringify({ on: wifi.checked }) });
+              toast(v.lanPort ? `People on your Wi-Fi can join ${w.name} now.` : `Wi-Fi play is off for ${w.name}.`);
+            } catch (e) {
+              toast(e.message);
+            }
+            refresh();
+          });
+          const wifiBox = el(
+            "div",
+            { class: "stack" },
+            el("label", { class: "check", for: wifi.id }, wifi, " Play on my Wi-Fi"),
+            w.lanPort
+              ? el(
+                  "p",
+                  { class: "muted small" },
+                  `Java: Multiplayer shows it under LAN worlds, or Direct Connect to ${lanAddress}:${w.lanPort}. ` +
+                    (w.featured ? "Bedrock: Friends tab → LAN Games." : "Bedrock players on your Wi-Fi reach the featured world only."),
+                )
+              : null,
+          );
           renderAccess(w, accessBox).catch((e) => toast(e.message));
           return el(
             "div",
@@ -355,6 +380,7 @@ async function loadWorlds() {
             ),
             el("p", { class: "muted small" }, `${w.featured ? "Featured · friends join this one · " : ""}Minecraft ${w.version}${players}`),
             actions.length ? el("div", { class: "row" }, ...actions) : null,
+            wifiBox,
             accessBox,
             backupBox,
           );
@@ -493,6 +519,7 @@ async function loadInvites(worlds) {
   const settings = await api("/api/settings");
   if (document.activeElement !== $("java-address")) $("java-address").value = settings.java_address ?? "";
   if (document.activeElement !== $("bedrock-address")) $("bedrock-address").value = settings.bedrock_address ?? "";
+  if (document.activeElement !== $("lan-address")) $("lan-address").value = settings.lan_address ?? "";
 }
 
 $("invite-form").addEventListener("submit", async (e) => {
@@ -523,7 +550,7 @@ $("invite-form").addEventListener("submit", async (e) => {
 $("address-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   try {
-    await api("/api/settings", { method: "PUT", body: JSON.stringify({ java_address: $("java-address").value.trim() || null, bedrock_address: $("bedrock-address").value.trim() || null }) });
+    await api("/api/settings", { method: "PUT", body: JSON.stringify({ java_address: $("java-address").value.trim() || null, bedrock_address: $("bedrock-address").value.trim() || null, lan_address: $("lan-address").value.trim() || null }) });
     toast("Saved. Invite pages will show these addresses.");
   } catch (err) {
     toast(err.message);

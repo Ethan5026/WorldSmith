@@ -10,6 +10,7 @@ import type { OwnerApprovalOAuth } from "./oauth.ts";
 import type { HubServices } from "./services.ts";
 import { WorldProperties } from "@worldsmith/core";
 import { audit, type Db } from "./db.ts";
+import type { SettingKey } from "./settings.ts";
 
 const portalDir = fileURLToPath(new URL("../portal", import.meta.url));
 const Slug = z.string().regex(/^[a-z0-9][a-z0-9-]{1,30}$/);
@@ -130,6 +131,16 @@ export function createPrivateApp(config: Config, db: Db, oauth: OwnerApprovalOAu
     }),
   );
 
+  app.put(
+    "/api/worlds/:slug/lan",
+    csrf,
+    handle(async (req) => {
+      const slug = Slug.parse(req.params.slug);
+      worlds.setLan(slug, z.object({ on: z.boolean() }).parse(req.body).on);
+      return worlds.view(slug);
+    }),
+  );
+
   // ---- builds (owner; Claude uses the MCP "build" tool) ----
   app.post(
     "/api/worlds/:slug/build",
@@ -222,9 +233,13 @@ export function createPrivateApp(config: Config, db: Db, oauth: OwnerApprovalOAu
     csrf,
     handle((req) => {
       const body = z
-        .object({ java_address: z.string().max(120).nullable().optional(), bedrock_address: z.string().max(120).nullable().optional() })
+        .object({
+          java_address: z.string().max(120).nullable().optional(),
+          bedrock_address: z.string().max(120).nullable().optional(),
+          lan_address: z.union([z.ipv4(), z.literal("")]).nullable().optional(),
+        })
         .parse(req.body);
-      for (const [k, v] of Object.entries(body)) services.settings.set(k as "java_address" | "bedrock_address", v ?? null);
+      for (const [k, v] of Object.entries(body)) services.settings.set(k as SettingKey, v ?? null);
       return services.settings.all();
     }),
   );
