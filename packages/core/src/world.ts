@@ -142,8 +142,15 @@ export function compileWorld(spec: WorldSpec, opts: { rconPassword: string }): C
     // Floodgate (Bedrock) players can't sign chat messages; Java servers must not require it.
     env.ENFORCE_SECURE_PROFILE = "FALSE";
   }
-  if (spec.upgradeWorld) env.EXTRA_ARGS = "--forceUpgrade";
-  if (spec.minecraft.type === "PAPER") env.PATCH_DEFINITIONS = `/data/${PATCH_DIR}`;
+  if (spec.upgradeWorld) {
+    // One upgrade boot on Mojang's own server: Paper 26.x refuses --forceUpgrade ("not yet
+    // implemented"), vanilla upgrades every chunk with the official converter. Afterwards the hub
+    // clears the flag and the world runs on its normal server type again.
+    env.TYPE = "VANILLA";
+    env.EXTRA_ARGS = "--forceUpgrade";
+  } else if (spec.minecraft.type === "PAPER") {
+    env.PATCH_DEFINITIONS = `/data/${PATCH_DIR}`;
+  }
   return {
     image: "itzg/minecraft-server:java25",
     env,

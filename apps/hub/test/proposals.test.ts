@@ -43,6 +43,8 @@ let dir: string;
 let db: Db;
 let created: { slug: string; bedrock: boolean }[];
 let failNext: string | undefined;
+let failUpgrade: string | undefined;
+let upgraded: string[];
 let notified: string[];
 let proposals: ProposalService;
 
@@ -51,6 +53,8 @@ beforeEach(() => {
   db = openDb(dir);
   created = [];
   failNext = undefined;
+  failUpgrade = undefined;
+  upgraded = [];
   notified = [];
   const worlds = {
     db,
@@ -60,6 +64,10 @@ beforeEach(() => {
       if (failNext) throw new Error(failNext);
       created.push({ slug: opts.slug, bedrock: opts.bedrock });
       return { slug: opts.slug };
+    },
+    runUpgradeBoot: async (slug: string) => {
+      if (failUpgrade) throw new Error(failUpgrade);
+      upgraded.push(slug);
     },
   } as unknown as WorldService;
   const push = { notify: async (m: { body: string }) => (notified.push(m.body), 1) } as unknown as Push;
@@ -113,4 +121,24 @@ test("names must be free, maps must exist, and failures are recorded", async () 
   const declined = await proposals.decline((await proposals.proposeWorldFromMap({ ...base, slug: "disney-2", bedrock: "no" }, "Claude")).id);
   assert.equal(declined.status, "declined");
   assert.deepEqual((await proposals.list()).map((p) => p.status), ["declined", "failed"]);
+});
+
+test("approval runs the old-map upgrade; an upgrade failure keeps the world and says so", async () => {
+  const v = await proposals.proposeWorldFromMap({ ...base, bedrock: "no" }, "Claude");
+  assert.equal((await proposals.approve(v.id, {})).status, "approved");
+  assert.deepEqual(upgraded, ["disney-hg"]);
+  failUpgrade = "The map upgrade stopped early";
+  const w = await proposals.proposeWorldFromMap({ ...base, slug: "disney-2", bedrock: "no" }, "Claude");
+  const r = await proposals.approve(w.id, {});
+  assert.equal(r.status, "failed");
+  assert.equal(r.result?.slug, "disney-2");
+  assert.match(r.result!.error!, /was created, but: The map upgrade stopped early/);
+});
+
+test("the portal does not wait for the build", async () => {
+  const v = await proposals.proposeWorldFromMap({ ...base, bedrock: "no" }, "Claude");
+  const r = await proposals.approve(v.id, {}, { wait: false });
+  assert.equal(r.status, "building");
+  await new Promise((done) => setTimeout(done, 20));
+  assert.equal((await proposals.get(v.id)).status, "approved");
 });

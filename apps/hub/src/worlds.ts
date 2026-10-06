@@ -160,6 +160,29 @@ export class WorldService {
     return this.view(opts.slug);
   }
 
+  /**
+   * An old imported map's one-time upgrade: boot it once on the upgrade server, wait until every chunk
+   * is converted and the server is up, then put it to sleep (which switches it back to its normal
+   * server type, see stop()).
+   */
+  async runUpgradeBoot(slug: string, timeoutMs = 20 * 60_000): Promise<void> {
+    if (!this.spec(slug).upgradeWorld) return;
+    await this.start(slug, "map upgrade");
+    const until = Date.now() + timeoutMs;
+    for (;;) {
+      await new Promise((r) => setTimeout(r, 5000));
+      const s = await this.worker.status(slug);
+      if (s.mc?.online) break;
+      if (s.container === "exited" || s.container === "dead") {
+        const tail = (await this.worker.logs(slug, 20).catch(() => "")).split("\n").slice(-8).join("\n");
+        throw new Error(`The map upgrade stopped early:\n${tail}`);
+      }
+      if (Date.now() > until) throw new Error("The map upgrade took longer than 20 minutes.");
+    }
+    audit(this.db, "map_upgraded", { slug });
+    await this.stop(slug, "map upgrade finished");
+  }
+
   /** Adopt a world that already exists on the worker (created before the hub tracked it). */
   async adopt(recipeId: string, slug: string, name: string, properties?: WorldProperties): Promise<WorldView> {
     const recipe = this.recipes.get(recipeId);

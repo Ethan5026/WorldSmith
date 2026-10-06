@@ -92,3 +92,15 @@ test("downloads accept sha256 (GeyserMC/Hangar) or sha512 (Modrinth), never neit
   assert.equal(WorldFile.safeParse(base).success, false);
   assert.equal(WorldFile.safeParse({ ...base, sha256: "a".repeat(63) }).success, false);
 });
+
+test("an upgrade boot runs on vanilla with --forceUpgrade (Paper 26.x can't), then back to the normal type", () => {
+  const recipe = loadRecipes(recipesDir).get("map")!;
+  const spec = instantiateRecipe(recipe, { slug: "old-map", name: "Old map" });
+  const normal = compileWorld(spec, { rconPassword: "x".repeat(24) });
+  assert.equal(normal.env.TYPE, "PAPER");
+  assert.equal(normal.env.EXTRA_ARGS, undefined);
+  const upgrade = compileWorld({ ...spec, upgradeWorld: true }, { rconPassword: "x".repeat(24) });
+  assert.equal(upgrade.env.TYPE, "VANILLA");
+  assert.equal(upgrade.env.EXTRA_ARGS, "--forceUpgrade");
+  assert.equal(upgrade.env.PATCH_DEFINITIONS, undefined);
+});

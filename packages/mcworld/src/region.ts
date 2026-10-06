@@ -126,6 +126,25 @@ export function decodeChunk(root: NbtCompound): ChunkView {
     return list[sec.indexes[((y & 15) << 8) | ((z & 15) << 4) | (x & 15)]!] ?? "minecraft:air";
   };
 
+  if (!surface && sections.size) {
+    // No heightmap (e.g. chunks converted by --forceUpgrade but not yet played): find each column's
+    // top block from the blocks themselves, starting at the highest section that has any.
+    const top = Math.max(...[...sections.entries()].filter(([, s]) => s.palette.some((p) => !/^minecraft:(air|cave_air|void_air)$/.test(p))).map(([y]) => y));
+    if (Number.isFinite(top)) {
+      surface = new Int16Array(256).fill(minY - 1);
+      for (let i = 0; i < 256; i++) {
+        const x = i & 15;
+        const z = i >> 4;
+        for (let y = top * 16 + 15; y >= minY; y--) {
+          if (!/^minecraft:(air|cave_air|void_air)$/.test(lookup(x, y, z, "palette"))) {
+            surface[i] = y;
+            break;
+          }
+        }
+      }
+    }
+  }
+
   return {
     x: cx,
     z: cz,

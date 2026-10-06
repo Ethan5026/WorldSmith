@@ -182,7 +182,7 @@ export class ProposalService {
   }
 
   /** Owner approval: checks the crossplay answers, then builds the world. */
-  async approve(id: number, rawAnswers: unknown): Promise<ProposalView> {
+  async approve(id: number, rawAnswers: unknown, opts: { wait?: boolean } = {}): Promise<ProposalView> {
     const answers = CrossplayAnswers.parse(rawAnswers ?? {});
     const r = this.row(id);
     if (r.status !== "pending") throw new Error(`Proposal #${id} is already ${r.status}.`);
@@ -195,20 +195,30 @@ export class ProposalService {
     const claimed = this.db.prepare("UPDATE proposals SET status = 'building', decided_at = ? WHERE id = ? AND status = 'pending'").run(Date.now(), id);
     if (claimed.changes !== 1) throw new Error(`Proposal #${id} was decided elsewhere.`);
     const bedrock = (answers.bedrockPlayers ?? request.bedrock) === "yes";
-    try {
-      const world = await this.worlds.createFromMap(report, request.root, {
-        slug: request.slug,
-        name: request.name,
-        bedrock,
-        gamemode: request.gamemode,
-        difficulty: request.difficulty,
-      });
-      this.db.prepare("UPDATE proposals SET status = 'approved', result = ? WHERE id = ?").run(JSON.stringify({ slug: world.slug }), id);
-      audit(this.db, "proposal_approved", { id, slug: world.slug, bedrock, textures: answers.textures ?? null, behavior: answers.behavior ?? null });
-    } catch (err) {
-      this.db.prepare("UPDATE proposals SET status = 'failed', result = ? WHERE id = ?").run(JSON.stringify({ error: (err as Error).message }), id);
-      audit(this.db, "proposal_failed", { id, error: (err as Error).message });
-    }
+    const build = async (): Promise<void> => {
+      let slug: string | undefined;
+      try {
+        const world = await this.worlds.createFromMap(report, request.root, {
+          slug: request.slug,
+          name: request.name,
+          bedrock,
+          gamemode: request.gamemode,
+          difficulty: request.difficulty,
+        });
+        slug = world.slug;
+        // Old maps: convert every chunk now, so the world is ready (and Claude can see it) right away.
+        await this.worlds.runUpgradeBoot(world.slug);
+        this.db.prepare("UPDATE proposals SET status = 'approved', result = ? WHERE id = ?").run(JSON.stringify({ slug: world.slug }), id);
+        audit(this.db, "proposal_approved", { id, slug: world.slug, bedrock, textures: answers.textures ?? null, behavior: answers.behavior ?? null });
+      } catch (err) {
+        const error = slug ? `${request.name} was created, but: ${(err as Error).message}` : (err as Error).message;
+        this.db.prepare("UPDATE proposals SET status = 'failed', result = ? WHERE id = ?").run(JSON.stringify({ slug, error }), id);
+        audit(this.db, "proposal_failed", { id, error });
+      }
+    };
+    // The portal doesn't wait (old maps take minutes to upgrade); it shows "Building…" until done.
+    if (opts.wait === false) void build();
+    else await build();
     return this.get(id);
   }
 }

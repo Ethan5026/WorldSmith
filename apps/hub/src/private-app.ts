@@ -202,7 +202,7 @@ export function createPrivateApp(config: Config, db: Db, oauth: OwnerApprovalOAu
     handle(async (req) => {
       const id = z.coerce.number().int().parse(req.params.id);
       const decision = z.enum(["approve", "decline"]).parse(req.params.decision);
-      return decision === "approve" ? services.proposals.approve(id, (req.body ?? {}).answers) : services.proposals.decline(id);
+      return decision === "approve" ? services.proposals.approve(id, (req.body ?? {}).answers, { wait: false }) : services.proposals.decline(id);
     }),
   );
 

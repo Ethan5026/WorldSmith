@@ -175,3 +175,11 @@ test("PNG encoder writes a valid header", () => {
   assert.deepEqual([...png.subarray(0, 8)], [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
   assert.equal(png.readUInt32BE(16), 4);
 });
+
+test("chunks without a heightmap (fresh from --forceUpgrade) still get a surface", () => {
+  const root = sampleChunk(0, 0);
+  delete root.Heightmaps;
+  const view = decodeChunk(root);
+  assert.equal(view.surface![0], -61);
+  assert.equal(view.surface![3 * 16 + 3], -57, "glass roof is the top block");
+});
