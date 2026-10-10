@@ -7,6 +7,7 @@ import {
   worldContainerName,
   worldVolumeName,
   worldDatapack,
+  DIMENSION_DIRS,
   serverConfigFiles,
   crossplayFiles,
   type WorldFile,
@@ -249,19 +250,39 @@ export class WorldRuntime {
     return safety;
   }
 
+  /**
+   * Clear the land of the Nether and/or the End of a stopped world (blocks, mobs, points of interest),
+   * so it generates again from the world's current dimension settings. The overworld is never touched.
+   * A safety backup of the whole world is taken first.
+   */
+  async resetDimensions(slug: string, dims: ("nether" | "end")[]): Promise<BackupInfo> {
+    const info = await this.inspect(slug);
+    if (!info) throw new Error(`World ${slug} does not exist`);
+    if (info.State.Running) throw new Error("Stop the world before resetting a dimension");
+    const safety = await this.backups.create(this.container(slug), slug, "before-dimension-reset");
+    const dirs = [...new Set(dims)].flatMap((d) => DIMENSION_DIRS[d]).flatMap((dir) => ["region", "entities", "poi"].map((sub) => `/data/${dir}/${sub}`));
+    await this.helper(slug, `rm -rf ${dirs.map((d) => `'${d}'`).join(" ")}`, "reset-dimension");
+    return safety;
+  }
+
   private async wipeVolume(slug: string): Promise<void> {
+    await this.helper(slug, "find /data -mindepth 1 -maxdepth 1 -exec rm -rf {} +", "wipe");
+  }
+
+  /** Run a shell command in a throwaway container that mounts only this world's volume, with no network. */
+  private async helper(slug: string, cmd: string, label: string): Promise<void> {
     const image = "alpine:3.20";
     await this.ensureImage(image);
     const helper = await this.docker.createContainer({
       Image: image,
-      Cmd: ["sh", "-c", "find /data -mindepth 1 -maxdepth 1 -exec rm -rf {} +"],
-      Labels: { "worldsmith.helper": "wipe" },
+      Cmd: ["sh", "-c", cmd],
+      Labels: { "worldsmith.helper": label },
       HostConfig: { Mounts: [{ Type: "volume", Source: worldVolumeName(slug), Target: "/data" }], NetworkMode: "none" },
     });
     try {
       await helper.start();
       const result = (await helper.wait()) as { StatusCode: number };
-      if (result.StatusCode !== 0) throw new Error(`Wiping ${slug} failed (exit ${result.StatusCode})`);
+      if (result.StatusCode !== 0) throw new Error(`${label} on ${slug} failed (exit ${result.StatusCode})`);
     } finally {
       await helper.remove({ force: true });
     }

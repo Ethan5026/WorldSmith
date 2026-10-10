@@ -165,6 +165,10 @@ export class WorkerClient {
   restore(slug: string, id: string): Promise<{ safetyBackup: BackupInfo }> {
     return this.call("POST", `/worlds/${slug}/restore`, { id }, 900_000);
   }
+  /** Clear a stopped world's Nether and/or End land (a safety backup is taken first). */
+  resetDimensions(slug: string, dimensions: ("nether" | "end")[]): Promise<{ safetyBackup: BackupInfo }> {
+    return this.call("POST", `/worlds/${slug}/reset-dimensions`, { dimensions }, 900_000);
+  }
   remove(slug: string, purge: boolean): Promise<void> {
     return this.call("DELETE", `/worlds/${slug}?purge=${purge}`, undefined, 90_000);
   }

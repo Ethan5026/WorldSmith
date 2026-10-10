@@ -69,6 +69,12 @@ export const WorldProperties = z
     }),
     allowFlight: z.boolean(),
     enableCommandBlock: z.boolean(),
+    /**
+     * Skyblock-style dimensions. "void": empty, except that Nether fortresses and bastions still
+     * appear (blazes and wither skeletons are needed to progress). Only new land changes: switching an
+     * existing world also clears that dimension's explored land (see WorldService.setDimensions).
+     */
+    dimensions: z.object({ nether: z.enum(["normal", "void"]).optional(), end: z.enum(["normal", "void"]).optional() }),
   })
   .partial();
 export type WorldProperties = z.infer<typeof WorldProperties>;

@@ -175,6 +175,13 @@ export function createWorkerApp(runtime: WorldRuntime, token: string): express.E
       return { safetyBackup: await runtime.restore(slugOf(req), id) };
     }),
   );
+  app.post(
+    "/worlds/:slug/reset-dimensions",
+    handle(async (req) => {
+      const { dimensions } = z.object({ dimensions: z.array(z.enum(["nether", "end"])).min(1).max(2) }).parse(req.body);
+      return { safetyBackup: await runtime.resetDimensions(slugOf(req), dimensions) };
+    }),
+  );
   app.get(
     "/worlds/:slug/logs",
     handle(async (req, res) => {

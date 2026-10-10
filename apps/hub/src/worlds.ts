@@ -243,6 +243,10 @@ export class WorldService {
     try {
       await this.worker.apply(spec, randomBytes(24).toString("base64url"), this.access.accessFiles(slug));
       await this.worker.installGame(slug, game.name);
+      // A void Nether/End starts empty, even if the saved game had explored them.
+      const dims = spec.properties.dimensions ?? {};
+      const voids = (["nether", "end"] as const).filter((d) => dims[d] === "void");
+      if (voids.length) await this.worker.resetDimensions(slug, voids);
     } catch (err) {
       this.db.prepare("DELETE FROM worlds WHERE slug = ?").run(slug);
       await this.worker.remove(slug, true).catch(() => undefined);
@@ -264,6 +268,34 @@ export class WorldService {
     if (!this.featuredSlug()) this.setFeatured(slug);
     await this.syncAccess(slug);
     return this.view(slug);
+  }
+
+  /**
+   * Switch the Nether and/or End between normal and void (Skyblock-style). Only those dimensions are
+   * touched: a dimension whose mode changes has its existing land cleared (safety backup first), so
+   * it generates fresh; the overworld is never changed. Restarts the world if it's running.
+   */
+  async setDimensions(
+    slug: string,
+    dims: { nether?: "normal" | "void"; end?: "normal" | "void" },
+    opts: { allowRestart?: boolean } = {},
+  ): Promise<{ world: WorldView; reset: ("nether" | "end")[]; safetyBackup?: string; restarted: boolean }> {
+    const spec = this.spec(slug);
+    const before = spec.properties.dimensions ?? {};
+    const reset = (["nether", "end"] as const).filter((d) => dims[d] && dims[d] !== (before[d] ?? "normal"));
+    const view = await this.view(slug, true);
+    if (view.state === "online" && view.players.online > 0 && !opts.allowRestart) {
+      throw new Error(`${spec.name} has ${view.players.online} player(s) online; changing dimensions restarts it. Ask first, then retry with allowRestart.`);
+    }
+    const wasRunning = (await this.worker.status(slug)).container === "running";
+    if (wasRunning) await this.stop(slug, "dimension change");
+    const next = WorldSpec.parse({ ...spec, properties: { ...spec.properties, dimensions: { ...before, ...dims } } });
+    this.db.prepare("UPDATE worlds SET spec = ? WHERE slug = ?").run(JSON.stringify(next), slug);
+    const safetyBackup = reset.length ? (await this.worker.resetDimensions(slug, reset)).safetyBackup.id : undefined;
+    await this.reapply(slug);
+    if (wasRunning) await this.start(slug, "dimension change");
+    audit(this.db, "world_dimensions_changed", { slug, dims: next.properties.dimensions, reset, safetyBackup: safetyBackup ?? null });
+    return { world: await this.view(slug, true), reset, safetyBackup, restarted: wasRunning };
   }
 
   /** Rebuild a stopped world's container from its saved spec (new settings, files, limits). Keeps the world data. */

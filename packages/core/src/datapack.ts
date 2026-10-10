@@ -36,6 +36,48 @@ export function resolveGamerules(spec: WorldSpec): Record<string, boolean | numb
   return out;
 }
 
+const VOID_LAYERS = [{ block: "minecraft:air", height: 1 }];
+const flat = (biome: string, structureSets: string[]) => ({
+  type: "minecraft:flat",
+  settings: { layers: VOID_LAYERS, biome, structure_overrides: structureSets, features: false, lakes: false },
+});
+/**
+ * Dimension definitions for the Nether and the End. 26.x keeps no generator in the world folder: it
+ * builds them from data packs at every start, so these files decide how new land generates. "normal"
+ * writes the vanilla definitions back (a pack file can't be removed by re-applying, only replaced).
+ */
+const DIMENSIONS = {
+  nether: {
+    file: "the_nether",
+    void: { type: "minecraft:the_nether", generator: flat("minecraft:nether_wastes", ["minecraft:nether_complexes"]) },
+    normal: {
+      type: "minecraft:the_nether",
+      generator: { type: "minecraft:noise", settings: "minecraft:nether", biome_source: { type: "minecraft:multi_noise", preset: "minecraft:nether" } },
+    },
+  },
+  end: {
+    file: "the_end",
+    void: { type: "minecraft:the_end", generator: flat("minecraft:the_end", []) },
+    normal: { type: "minecraft:the_end", generator: { type: "minecraft:noise", settings: "minecraft:end", biome_source: { type: "minecraft:the_end" } } },
+  },
+} as const;
+
+/** Folder names a dimension's land lives under (26.x layout, then the pre-26 layout of older maps). */
+export const DIMENSION_DIRS: Record<"nether" | "end", string[]> = {
+  nether: [`${LEVEL_NAME}/dimensions/minecraft/the_nether`, `${LEVEL_NAME}/DIM-1`],
+  end: [`${LEVEL_NAME}/dimensions/minecraft/the_end`, `${LEVEL_NAME}/DIM1`],
+};
+
+export function dimensionFiles(spec: WorldSpec): WorldFile[] {
+  const dims = spec.properties.dimensions ?? {};
+  return (["nether", "end"] as const).flatMap((d) => {
+    const mode = dims[d];
+    if (!mode) return [];
+    const def = DIMENSIONS[d];
+    return [{ kind: "inline" as const, encoding: "utf8" as const, path: `${DATAPACK_DIR}/data/minecraft/dimension/${def.file}.json`, content: JSON.stringify(def[mode], null, 2) }];
+  });
+}
+
 export function worldDatapack(spec: WorldSpec): WorldFile[] {
   const data = loadVersion(spec.minecraft.version);
   const gamerules = resolveGamerules(spec);
@@ -51,5 +93,6 @@ export function worldDatapack(spec: WorldSpec): WorldFile[] {
     { kind: "inline", encoding: "utf8", path: `${DATAPACK_DIR}/pack.mcmeta`, content: meta },
     { kind: "inline", encoding: "utf8", path: `${DATAPACK_DIR}/data/minecraft/tags/function/load.json`, content: JSON.stringify({ values: ["worldsmith:load"] }) },
     { kind: "inline", encoding: "utf8", path: `${DATAPACK_DIR}/data/worldsmith/function/load.mcfunction`, content: load },
+    ...dimensionFiles(spec),
   ];
 }
