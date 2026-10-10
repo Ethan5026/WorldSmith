@@ -1,0 +1,34 @@
+{
+  "name": "end-portal-island",
+  "origin": [-4, 62, -94],
+  "ops": [
+    {
+      "op": "voxels",
+      "at": [0, 0, 0],
+      "legend": {
+        "T": "stone",
+        "B": "stone_bricks",
+        "M": "mossy_stone_bricks",
+        "C": "cracked_stone_bricks",
+        "S": "end_portal_frame[eye=false,facing=south]",
+        "N": "end_portal_frame[eye=false,facing=north]",
+        "E": "end_portal_frame[eye=false,facing=east]",
+        "W": "end_portal_frame[eye=false,facing=west]"
+      },
+      "layers": [
+        [".........", ".........", ".........", "...TTT...", "...TTT...", "...TTT...", ".........", ".........", "........."],
+        [".........", ".........", "..TTTTT..", "..TTTTT..", "..TTTTT..", "..TTTTT..", "..TTTTT..", ".........", "........."],
+        [".........", ".BBBBBBB.", ".BBBBBBB.", ".BBBBBBB.", ".BBBBBBB.", ".BBBBBBB.", ".BBBBBBB.", ".BBBBBBB.", "........."],
+        [".BBBBBBB.", "BBBBBBBBB", "BBBBBBBBB", "BBBBBBBBB", "BBBBBBBBB", "BBBBBBBBB", "BBBBBBBBB", "BBBBBBBBB", ".BBBBBBB."],
+        [".BMBBCBM.", "BBBMBBBCB", "MBBBBBBBB", "BBBBBBBMB", "BCBBBBBBB", "BBBBBBBBM", "BMBBBBCBB", "BBCBMBBBB", ".BBMBBBC."],
+        [".........", ".........", "...SSS...", "..E...W..", "..E...W..", "..E...W..", "...NNN...", ".........", "........."]
+      ]
+    },
+    {
+      "op": "sign",
+      "at": [4, 5, 8],
+      "facing": "south",
+      "lines": [{ "text": "END PORTAL", "color": "dark_purple", "bold": true }, "Fill all 12 frames", "with Eyes of Ender", "to open it"]
+    }
+  ]
+}

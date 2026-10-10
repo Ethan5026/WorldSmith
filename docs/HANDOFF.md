@@ -156,6 +156,8 @@ bash scripts/security-check.sh
 
 **Void Nether/End for Skyblock (in progress):** the owner asked for a Skyblock-style empty Nether and End on `skyblock`, overworld untouched, tested on a copy first. Built: `properties.dimensions` + MCP `set_dimensions` (clears only the changed dimensions' land, safety backup first). Verified on a throwaway copy (Nether/End empty, fortresses/bastions still placed, overworld identical). **Proposal #8 "Skyblock Void Test"** (`skyblock-void-test`, from saved game `skyblock-progress` with both dimensions void) is waiting for approval; the owner then checks it (feature it temporarily so joins land there; creative + `execute in minecraft:the_nether run tp …` to look around). Only after the owner OKs it: `set_dimensions slug=skyblock nether=void end=void allowRestart=true`. That clears their explored Nether (they have been there), so remind them to bring back anything they left in the Nether first.
 
+**End portal island (owner asked, like the old Skyblock maps):** BuildScript in `docs/builds/skyblock-end-portal-island.json` (validated against 26.2): a 9×9 stone-brick island centered at 0,66,-90 with 12 empty end portal frames (all facing inward, a consistent ring; 26.2's portal pattern accepts any consistent ring, checked in the server jar) and a sign. Build it on the test copy first (proposal #8), then on `skyblock` with the void switch once the owner OKs. Heads-up given to the owner: in a fully void End the dragon's exit portal sits near the bottom of the world, so the fight may be awkward; the copy is where to try it.
+
 **Libraries on the worker:**
 - **Template library:** `lobby`.
 - **Saved minigames:** `lab-games`, and `skyblock` ("Classic Skyblock", saved fresh before anyone played: copy it to start over).
