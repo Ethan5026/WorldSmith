@@ -145,26 +145,19 @@ bash scripts/security-check.sh
 
 **Stack:** up and healthy (hub, worker, gatekeeper, playit, Geyser, ts).
 
-**Worlds (all asleep):**
+**Worlds** (2026-10-10 evening; the owner deleted ,  and ):
 
 | Slug | What it is |
 |---|---|
-| `hg-test` | **Featured** (where friends join). "Hunger Games Test": an MIT CurseForge map, creative mode as the author saved it, Wi-Fi play on (port 25570) |
-| `oneblock` | The owner's OneBlock (BentoBox/AOneBlock, crossplay) |
-| `lab` | "Builder Lab": a test lobby at x60–74, z60–74, a rotated copy at x86–100, a voxel cottage at x130, and a Hunger Games kit at (200,-60,200) with controls at (197,-60,170) |
-| `sg6-test` | Test world for the old-map upgrade (Survival Games 6, 1.6.1, "All Rights Reserved": keep private) |
-| `lab-copy` | Test copy of the "lab-games" saved minigame |
-
-**Pending proposal #4: "Lucky Block Boss Rush" (`lucky-rush`).** A void sky world with the `lucky_bosses` kit (market at 0,100,0; arena at 0,100,90) plus the `lbr` and `usrx-giant-boss` datapacks. The owner sent it back: "add a texture for the bedrock users for the block". Done: Geyser now shows lucky blocks with the lucky block texture (`apps/geyser/content`), and the plan gets the matching optional Java resource pack. Re-proposed as **#5** (with `properties.resourcePack`), pending.
-
-**Pending proposal #6: "Skyblock" (`skyblock`).** Classic Skyblock in a void world with the plains biome (so mobs spawn): L island at 0,64,0 with an oak, chest (lava bucket + ice), sand island at 60,64,0 (sandstone base so the sand doesn't fall) with cactus and chest (10 obsidian, melon + pumpkin seeds), spawn 1,67,4, respawn_radius 0, spawn protection 0. **After the owner approves: `save_minigame` name `skyblock` from the fresh world before anyone plays**, so a clean copy can be started any time. A test copy of the kit also lives in `lab` at market 600,-20,600 / arena 600,-20,690; installing it changed the lab's game rules (time frozen at noon, no mob spawning, keep inventory).
-
-The last two are test worlds; the owner may delete them in the portal.
+|  | **Featured** (where friends join). The owner's OneBlock (BentoBox/AOneBlock, crossplay), Wi-Fi port 25571 |
+|  | "Hunger Games Test": an MIT CurseForge map, creative mode as the author saved it |
+|  | **Classic Skyblock** (proposal #6), being played. Void sky world, plains biome so mobs spawn. L island at 0,64,0 with an oak and a chest (lava bucket + ice); sand island at 60,64,0 (sandstone base so the sand can't fall) with a cactus and a chest (10 obsidian, melon + pumpkin seeds). Spawn 1,67,4, respawn_radius 0, spawn protection 0, Wi-Fi port 25570. Its build was cut off by a hub redeploy and re-run by Claude; the card's "may not have finished" warning is stale. |
+|  | **Lucky Block Boss Rush** (proposal #7, approved with textures best_effort / behavior required).  kit: market 0,100,0, arena 0,100,90;  +  datapacks; optional Java resource pack (LuckyBlock_RP). Not played yet. |
 
 **Libraries on the worker:**
 - **Template library:** `lobby`.
-- **Saved minigame:** `lab-games`.
-- **Map imports:** the HG map and the SG6 map.
+- **Saved minigames:** `lab-games`, and `skyblock` ("Classic Skyblock", saved fresh before anyone played: copy it to start over).
+- **Map imports:** the HG map and the SG6 map (its world was deleted; the import is still on the worker).
 
 **Also on the laptop:**
 - **Java Wi-Fi announcer:** a Startup shortcut named "WorldSmith Wi-Fi play.lnk" that runs `conhost --headless node scripts/lan-announce.ts`.
