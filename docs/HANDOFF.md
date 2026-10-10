@@ -155,7 +155,9 @@ bash scripts/security-check.sh
 | `sg6-test` | Test world for the old-map upgrade (Survival Games 6, 1.6.1, "All Rights Reserved": keep private) |
 | `lab-copy` | Test copy of the "lab-games" saved minigame |
 
-**Pending proposal #4: "Lucky Block Boss Rush" (`lucky-rush`).** A void sky world with the `lucky_bosses` kit (market at 0,100,0; arena at 0,100,90) plus the `lbr` and `usrx-giant-boss` datapacks. The owner sent it back: "add a texture for the bedrock users for the block". Done: Geyser now shows lucky blocks with the lucky block texture (`apps/geyser/content`), and the plan gets the matching optional Java resource pack. Re-propose as #5 with `properties.resourcePack`. A test copy of the kit also lives in `lab` at market 600,-20,600 / arena 600,-20,690; installing it changed the lab's game rules (time frozen at noon, no mob spawning, keep inventory).
+**Pending proposal #4: "Lucky Block Boss Rush" (`lucky-rush`).** A void sky world with the `lucky_bosses` kit (market at 0,100,0; arena at 0,100,90) plus the `lbr` and `usrx-giant-boss` datapacks. The owner sent it back: "add a texture for the bedrock users for the block". Done: Geyser now shows lucky blocks with the lucky block texture (`apps/geyser/content`), and the plan gets the matching optional Java resource pack. Re-proposed as **#5** (with `properties.resourcePack`), pending.
+
+**Pending proposal #6: "Skyblock" (`skyblock`).** Classic Skyblock in a void world with the plains biome (so mobs spawn): L island at 0,64,0 with an oak, chest (lava bucket + ice), sand island at 60,64,0 (sandstone base so the sand doesn't fall) with cactus and chest (10 obsidian, melon + pumpkin seeds), spawn 1,67,4, respawn_radius 0, spawn protection 0. **After the owner approves: `save_minigame` name `skyblock` from the fresh world before anyone plays**, so a clean copy can be started any time. A test copy of the kit also lives in `lab` at market 600,-20,600 / arena 600,-20,690; installing it changed the lab's game rules (time frozen at noon, no mob spawning, keep inventory).
 
 The last two are test worlds; the owner may delete them in the portal.
 
@@ -251,6 +253,9 @@ The last two are test worlds; the owner may delete them in the portal.
 - **Path rewriting.** Git Bash rewrites `/paths` in arguments; prefix docker or node commands with `MSYS_NO_PATHCONV=1`.
 - **File locks.** Windows sometimes locks a file briefly (EBUSY/UNKNOWN on write); just retry.
 - **Node's `https` `lookup` hook** may be asked for *all* addresses (`opts.all`) and must answer with an array.
+
+**Claude connector:**
+- **JSON keys that differ only in case** (a voxels legend with both "S" and "s") make claude.ai reject the whole tool call: "Request body contains duplicate JSON keys". The legend description says so.
 
 **Modrinth:**
 - **Datapacks are usually `project_type: "mod"`** in the v2 API, with `"datapack"` among their loaders. The resolver uses the datapack build when the server can't load the project as a mod or plugin (`catalog.ts`).

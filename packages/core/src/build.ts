@@ -95,7 +95,7 @@ export const BuildOp = z.discriminatedUnion("op", [
   z.object({
     op: z.literal("voxels"),
     at: Vec.describe("Lowest north-west corner of the drawing"),
-    legend: z.record(z.string().length(1), Block).describe('Character → block state, e.g. {"#": "stone_bricks", "D": "oak_door[facing=south,half=lower]"}'),
+    legend: z.record(z.string().length(1), Block).describe('Character → block state, e.g. {"#": "stone_bricks", "D": "oak_door[facing=south,half=lower]"}. Use characters that differ ignoring case (not both "S" and "s"): the Claude connector rejects such keys as duplicates.'),
     layers: z
       .array(z.array(z.string().max(96)).max(96))
       .min(1)
