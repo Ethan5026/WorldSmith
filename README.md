@@ -7,15 +7,11 @@ Describe a Minecraft world on your phone, approve Claude's plan, and friends can
 - **Gatekeeper**: the one public address. It handles join requests, wake on join, and version help.
 - **Worker**: one `itzg/minecraft-server` container per world, test-booted before going live.
 
-Status: Phase 0 (risk spikes). See [docs/spikes.md](docs/spikes.md) and [docs/feasibility.md](docs/feasibility.md).
+Status: Phase 1 (server, friends, crossplay) and Phase 2 (Claude world builder) are done; Phase 3 (showcase content) is next. Start with [docs/HANDOFF.md](docs/HANDOFF.md).
 
 ## Layout
 
-```
-packages/mcproto/   Minecraft handshake/status/login codec (tested against live 26.2/26.3 servers)
-spikes/             Phase 0 experiments (spike-a-worlds, spike-e-gatekeeper)
-docs/               feasibility research, spike log
-```
+See the table in [docs/HANDOFF.md](docs/HANDOFF.md#4-architecture-as-built).
 
 ## Develop
 
