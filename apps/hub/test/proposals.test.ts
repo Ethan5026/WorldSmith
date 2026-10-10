@@ -146,8 +146,8 @@ test("names must be free, maps must exist, and failures are recorded", async () 
   await assert.rejects(proposals.proposeWorldFromMap({ ...base, slug: "taken" }, "Claude"), /already exists/);
   await assert.rejects(proposals.proposeWorldFromMap({ ...base, root: "Other" }, "Claude"), /no world at "Other"/);
   await assert.rejects(proposals.proposeWorldFromMap({ ...base, mapId: "20261005-120000-ffffff" }, "Claude"), /no such import/);
-  const v = await proposals.proposeWorldFromMap({ ...base, bedrock: "no" }, "Claude");
-  await assert.rejects(proposals.proposeWorldFromMap({ ...base, bedrock: "no" }, "Claude"), /Another proposal already uses/);
+  const v = await proposals.proposeWorldFromMap({ ...base, bedrock: "no" }, "owner (portal)");
+  await assert.rejects(proposals.proposeWorldFromMap({ ...base, bedrock: "no" }, "Claude"), /Another proposal already uses/, "Claude never replaces the owner's own card");
   failNext = "disk full";
   const failed = await proposals.approve(v.id, {});
   assert.equal(failed.status, "failed");
@@ -200,6 +200,21 @@ test("world plans: content is pinned, Bedrock questions asked, builds run after 
   assert.deepEqual(ran, ["lucky-islands:spawn-sign"]);
   assert.deepEqual(stopped, ["lucky-islands"], "the world goes back to sleep after its builds");
   assert.deepEqual(done.result?.builds, [{ name: "spawn-sign", ok: true, failed: 0 }]);
+});
+
+test("Claude can revise its own pending plan: the new card replaces the old one; never one that's building", async () => {
+  const first = await proposals.proposeWorldPlan(plan, "Claude");
+  // A plan that needs fixing doesn't touch the pending one.
+  resolveIssues = ["nope has no build for Minecraft 26.2 (Paper)."];
+  await assert.rejects(proposals.proposeWorldPlan(plan, "Claude"), /Fix these/);
+  resolveIssues = [];
+  assert.equal((await proposals.get(first.id)).status, "pending");
+  const second = await proposals.proposeWorldPlan({ ...plan, pitch: "Now with a lobby." }, "Claude");
+  const old = await proposals.get(first.id);
+  assert.equal(old.status, "declined");
+  assert.equal(old.result?.note, `Replaced by #${second.id}`);
+  assert.equal((await proposals.get(second.id)).status, "pending");
+  await assert.rejects(proposals.approve(first.id, { textures: "required", behavior: "best_effort" }), /already declined|declined/);
 });
 
 test("world plans that need fixing are never filed; owners can send plans back with a note", async () => {

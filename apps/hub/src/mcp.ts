@@ -472,7 +472,8 @@ export function createMcpServer(config: Config, services: HubServices, clientId?
         "the build tool: lobbies, templates, voxels, hunger_games…) that run right after the world is created. " +
         "Everything is checked first; if something needs fixing you get the list and nothing is filed. Relay the " +
         "crossplay summary to the owner when Bedrock players may join; the portal asks them the texture/behavior " +
-        "questions. Then watch proposal_status: the owner may approve, decline, or send it back with a note.",
+        "questions. Then watch proposal_status: the owner may approve, decline, or send it back with a note. To revise a " +
+        "plan the owner hasn't acted on yet, propose again with the same slug: the new card replaces your old one.",
       inputSchema: WorldPlan.shape,
     },
     async (args) => {

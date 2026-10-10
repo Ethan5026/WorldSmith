@@ -238,10 +238,12 @@ export class ProposalService {
     const plan = WorldPlan.parse(raw);
     const { minecraft, type } = await this.platform(plan);
     if (this.worlds.row(plan.slug)) throw new Error(`A world called "${plan.slug}" already exists.`);
-    const clash = (this.db.prepare("SELECT id, kind, payload FROM proposals WHERE status IN ('pending','building')").all() as unknown as ProposalRow[]).some(
+    const same = (this.db.prepare("SELECT id, kind, status, payload, created_by FROM proposals WHERE status IN ('pending','building')").all() as unknown as ProposalRow[]).filter(
       (r) => this.payload(r).plan.slug === plan.slug,
     );
-    if (clash) throw new Error(`Another proposal already uses the name "${plan.slug}".`);
+    // Claude may revise its own plan while the owner hasn't acted on it: the new card replaces the old one.
+    const replaces = same.filter((r) => r.status === "pending" && !by.startsWith("owner") && !r.created_by.startsWith("owner"));
+    if (same.length > replaces.length) throw new Error(`Another proposal already uses the name "${plan.slug}".`);
     if (plan.base.kind === "map") {
       const report = await this.worlds.worker.getMap(plan.base.mapId);
       const root = plan.base.root;
@@ -266,6 +268,12 @@ export class ProposalService {
         .prepare("INSERT INTO proposals (kind, title, payload, created_by, created_at) VALUES ('world_plan', ?, ?, ?, ?)")
         .run(title, JSON.stringify({ plan, resolution } satisfies Payload), by, Date.now()).lastInsertRowid,
     );
+    for (const old of replaces) {
+      this.db
+        .prepare("UPDATE proposals SET status = 'declined', decided_at = ?, result = ? WHERE id = ? AND status = 'pending'")
+        .run(Date.now(), JSON.stringify({ note: `Replaced by #${id}` }), old.id);
+      audit(this.db, "proposal_replaced", { id: old.id, by: id });
+    }
     audit(this.db, "proposal_created", { id, kind: "world_plan", slug: plan.slug, base: plan.base.kind, content: resolution.items.length, builds: plan.builds.length, by });
     // The owner's own "Make a world" is already on their screen; only Claude's ideas need a nudge.
     if (!by.startsWith("owner")) {
