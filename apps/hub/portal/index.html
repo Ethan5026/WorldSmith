@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>WorldSmith</title>
-  <meta name="theme-color" content="#182120">
+  <meta name="theme-color" content="#1c2026">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="WorldSmith">
@@ -16,122 +16,147 @@
 </head>
 <body>
   <header class="top">
-    <div class="brand"><img src="/icon-192.png" alt="" width="28" height="28"><span>WorldSmith</span></div>
+    <div class="brand"><img src="/icon-192.png" alt="" width="26" height="26"><span>WorldSmith</span></div>
     <span id="greeting" class="muted"></span>
   </header>
 
   <main>
-    <section id="requests" aria-labelledby="h-requests" hidden>
-      <h2 id="h-requests">Wants to join</h2>
-      <div id="request-list" class="stack"></div>
-    </section>
+    <!-- Worlds: what needs you, then your worlds -->
+    <div class="tab" id="tab-worlds" data-tab="worlds">
+      <section id="inbox" class="inbox" aria-labelledby="h-inbox" hidden>
+        <h2 id="h-inbox">Needs you</h2>
+        <div id="request-list" class="stack"></div>
+        <div id="proposal-list" class="stack"></div>
+        <div id="pending-list" class="stack"></div>
+      </section>
 
-    <details id="declined" class="declined" hidden>
-      <summary><h2>Declined</h2><span id="declined-count" class="pill"></span></summary>
-      <p class="muted small">People you declined. They're told they don't have access and you aren't notified again; their attempts are counted here.</p>
-      <div id="declined-list" class="stack"></div>
-    </details>
+      <section aria-labelledby="h-worlds">
+        <h2 id="h-worlds">Worlds</h2>
+        <div id="world-list" class="stack"><p class="muted small">Loading…</p></div>
+        <p class="muted small">Worlds sleep when nobody's on and wake up when a friend joins. Waking takes about a minute.</p>
+      </section>
+    </div>
 
-    <section id="proposals" aria-labelledby="h-proposals" hidden>
-      <h2 id="h-proposals">New worlds to review</h2>
-      <div id="proposal-list" class="stack"></div>
-    </section>
+    <!-- Friends: who can play, invites, declined -->
+    <div class="tab" id="tab-friends" data-tab="friends" hidden>
+      <section aria-labelledby="h-friends">
+        <h2 id="h-friends">Friends</h2>
+        <div id="player-list" class="list"></div>
+        <form id="add-player" class="inline-form">
+          <label class="sr-only" for="add-platform">Edition</label>
+          <select id="add-platform"><option value="java">Java</option><option value="bedrock">Bedrock</option></select>
+          <label class="sr-only" for="add-name">Minecraft username</label>
+          <input id="add-name" name="name" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Username or Xbox gamertag" minlength="3" maxlength="16" required>
+          <button type="submit" class="primary">Add</button>
+        </form>
+        <p class="muted small">Friends can also just try to join. You'll get a notification to let them in.</p>
+      </section>
 
-    <section id="connections" aria-labelledby="h-connections" hidden>
-      <h2 id="h-connections">Claude wants to connect</h2>
-      <div id="pending-list" class="stack"></div>
-    </section>
+      <section aria-labelledby="h-invite">
+        <h2 id="h-invite">Invite links</h2>
+        <form id="invite-form" class="panel stack">
+          <div class="fields">
+            <label class="field">World
+              <select id="invite-world"><option value="">Any world they're allowed on</option></select>
+            </label>
+            <label class="field">Expires in
+              <select id="invite-days"><option value="1">1 day</option><option value="7" selected>7 days</option><option value="30">30 days</option></select>
+            </label>
+            <label class="field">Uses
+              <select id="invite-uses"><option value="1" selected>1 person</option><option value="5">5 people</option><option value="20">20 people</option></select>
+            </label>
+          </div>
+          <button type="submit" class="primary">Create invite link</button>
+          <div id="invite-result" class="stack" hidden></div>
+        </form>
+        <div id="invite-list" class="list"></div>
+      </section>
 
-    <section aria-labelledby="h-worlds">
-      <h2 id="h-worlds">Worlds</h2>
-      <div id="world-list" class="stack"><p class="muted small">Loading…</p></div>
-      <p id="address-note" class="muted small"></p>
-    </section>
+      <details id="declined" class="fold" hidden>
+        <summary>Declined <span id="declined-count" class="count"></span></summary>
+        <p class="muted small">People you declined are told they don't have access, and you aren't notified again.</p>
+        <div id="declined-list" class="list"></div>
+      </details>
+    </div>
 
-    <section id="games" aria-labelledby="h-games" hidden>
-      <h2 id="h-games">Saved minigames</h2>
-      <p class="muted small">Worlds you saved as minigames. Each copy is a fresh, separate world: play it, wreck it, and copy again.</p>
-      <div id="game-list" class="stack"></div>
-    </section>
+    <!-- Library: saved minigames, maps, past world plans -->
+    <div class="tab" id="tab-library" data-tab="library" hidden>
+      <section id="games" aria-labelledby="h-games">
+        <h2 id="h-games">Saved minigames</h2>
+        <div id="game-list" class="stack"><p class="muted small">Nothing saved yet. Open a world's Manage menu to save it as a minigame.</p></div>
+      </section>
 
-    <section id="maps" aria-labelledby="h-maps">
-      <h2 id="h-maps">Maps</h2>
-      <p class="muted small">Download a Java map zip (Planet Minecraft, CurseForge…), then add it here. WorldSmith checks it and only ever installs world data, never programs.</p>
-      <form id="map-upload" class="card stack">
-        <label class="field" for="map-file">Map zip from this device
-          <input id="map-file" type="file" accept=".zip,application/zip" required>
-        </label>
-        <progress id="map-progress" max="1" value="0" hidden></progress>
-        <button type="submit" class="primary">Upload map</button>
-      </form>
-      <form id="map-link" class="row add">
-        <label class="sr-only" for="map-url">Direct download link</label>
-        <input id="map-url" type="url" placeholder="Or paste a direct https download link" autocapitalize="off" spellcheck="false" required>
-        <button type="submit">Download</button>
-      </form>
-      <div id="map-list" class="stack"></div>
-    </section>
-
-    <section aria-labelledby="h-friends">
-      <h2 id="h-friends">Friends</h2>
-      <div id="player-list" class="stack"></div>
-      <form id="add-player" class="row add">
-        <label class="sr-only" for="add-name">Minecraft username</label>
-        <select id="add-platform" aria-label="Edition"><option value="java">Java</option><option value="bedrock">Bedrock</option></select>
-        <input id="add-name" name="name" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Java username or Xbox gamertag" minlength="3" maxlength="16" required>
-        <button type="submit" class="primary">Add friend</button>
-      </form>
-      <p class="muted small">Or just give friends the server address: when they try to join, you'll get a notification to approve them.</p>
-    </section>
-
-    <section aria-labelledby="h-invite">
-      <h2 id="h-invite">Invite friends</h2>
-      <form id="invite-form" class="card stack">
-        <div class="row">
-          <label class="field">World
-            <select id="invite-world"><option value="">Any world they're allowed on</option></select>
+      <section id="maps" aria-labelledby="h-maps">
+        <h2 id="h-maps">Maps</h2>
+        <p class="muted small">Download a Java map zip (Planet Minecraft, CurseForge), then add it here. WorldSmith checks it and only installs world data, never programs.</p>
+        <form id="map-upload" class="panel stack">
+          <label class="field" for="map-file">Map zip from this device
+            <input id="map-file" type="file" accept=".zip,application/zip" required>
           </label>
-          <label class="field">Expires in
-            <select id="invite-days"><option value="1">1 day</option><option value="7" selected>7 days</option><option value="30">30 days</option></select>
+          <progress id="map-progress" max="1" value="0" hidden></progress>
+          <button type="submit" class="primary">Upload map</button>
+        </form>
+        <form id="map-link" class="inline-form">
+          <label class="sr-only" for="map-url">Direct download link</label>
+          <input id="map-url" type="url" placeholder="Or paste a direct https download link" autocapitalize="off" spellcheck="false" required>
+          <button type="submit">Download</button>
+        </form>
+        <div id="map-list" class="stack"></div>
+      </section>
+
+      <details id="proposals" class="fold" hidden>
+        <summary>Past world plans</summary>
+        <div id="proposal-history" class="stack"></div>
+      </details>
+    </div>
+
+    <!-- Settings: addresses, Claude, notifications -->
+    <div class="tab" id="tab-settings" data-tab="settings" hidden>
+      <section aria-labelledby="h-addresses">
+        <h2 id="h-addresses">Server addresses</h2>
+        <p class="muted small">Invite pages show these to friends. Copy them from playit.</p>
+        <form id="address-form" class="panel stack">
+          <label class="field">Java address
+            <input id="java-address" placeholder="example.ply.gg" maxlength="120" autocapitalize="off" spellcheck="false">
           </label>
-          <label class="field">Uses
-            <select id="invite-uses"><option value="1" selected>1 person</option><option value="5">5 people</option><option value="20">20 people</option></select>
+          <label class="field">Bedrock address and port
+            <input id="bedrock-address" placeholder="1.2.3.4:19132" maxlength="120" autocapitalize="off" spellcheck="false">
           </label>
+          <label class="field">This PC's Wi-Fi address
+            <input id="lan-address" placeholder="192.168.1.20" maxlength="15" inputmode="decimal" autocapitalize="off" spellcheck="false">
+          </label>
+          <button type="submit">Save addresses</button>
+        </form>
+      </section>
+
+      <section id="connections" aria-labelledby="h-claude">
+        <h2 id="h-claude">Claude</h2>
+        <div id="active-list" class="list"></div>
+        <p class="muted small">To connect, add this address in claude.ai under Customize, then Connectors. You approve every new connection here.</p>
+        <code id="mcp-url" class="url"></code>
+      </section>
+
+      <section aria-labelledby="h-notify">
+        <h2 id="h-notify">Notifications</h2>
+        <div class="panel stack">
+          <p id="notify-state" class="small"></p>
+          <div class="row">
+            <button id="notify-enable" type="button" class="primary">Turn on notifications</button>
+            <button id="notify-test" type="button">Send a test</button>
+          </div>
+          <p id="ios-hint" class="muted small" hidden>On iPhone, first tap Share, then Add to Home Screen, and open WorldSmith from your home screen.</p>
         </div>
-        <button type="submit" class="primary">Create invite link</button>
-        <div id="invite-result" class="stack" hidden></div>
-      </form>
-      <div id="invite-list" class="stack"></div>
-      <form id="address-form" class="row add">
-        <label class="sr-only" for="java-address">Server address friends use</label>
-        <input id="java-address" placeholder="Java address (from playit)" maxlength="120" autocapitalize="off" spellcheck="false">
-        <label class="sr-only" for="bedrock-address">Bedrock address and port</label>
-        <input id="bedrock-address" placeholder="Bedrock address:port (from playit)" maxlength="120" autocapitalize="off" spellcheck="false">
-        <label class="sr-only" for="lan-address">This computer's Wi-Fi address</label>
-        <input id="lan-address" placeholder="This PC's Wi-Fi address, e.g. 192.168.1.20" maxlength="15" inputmode="decimal" autocapitalize="off" spellcheck="false">
-        <button type="submit">Save addresses</button>
-      </form>
-    </section>
-
-    <section aria-labelledby="h-claude">
-      <h2 id="h-claude">Claude connector</h2>
-      <div id="active-list" class="stack"></div>
-      <p class="muted small">In claude.ai → Customize → Connectors, add this address. Every new connection must be approved here.</p>
-      <code id="mcp-url" class="url"></code>
-    </section>
-
-    <section aria-labelledby="h-notify">
-      <h2 id="h-notify">Notifications</h2>
-      <div class="card stack">
-        <p id="notify-state" class="small"></p>
-        <div class="row">
-          <button id="notify-enable" type="button" class="primary">Turn on notifications</button>
-          <button id="notify-test" type="button">Send a test</button>
-        </div>
-        <p id="ios-hint" class="muted small" hidden>On iPhone, first tap Share → Add to Home Screen, then open WorldSmith from your home screen to turn on notifications.</p>
-      </div>
-    </section>
+      </section>
+    </div>
   </main>
+
+  <nav class="tabs" aria-label="Sections">
+    <a href="#worlds" data-tab="worlds"><span class="tab-icon" aria-hidden="true"></span>Worlds<span id="inbox-badge" class="badge" hidden></span></a>
+    <a href="#friends" data-tab="friends"><span class="tab-icon" aria-hidden="true"></span>Friends</a>
+    <a href="#library" data-tab="library"><span class="tab-icon" aria-hidden="true"></span>Library</a>
+    <a href="#settings" data-tab="settings"><span class="tab-icon" aria-hidden="true"></span>Settings</a>
+  </nav>
+
   <p id="toast" class="toast" role="status" aria-live="polite" hidden></p>
 </body>
 </html>
