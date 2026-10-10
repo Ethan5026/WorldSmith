@@ -1,6 +1,6 @@
 # WorldSmith: session handoff
 
-Last updated 2026-10-10. Branch `phase-1`, last commit `c13eed5`. Remote: `https://github.com/Ethan5026/WorldSmith.git`.
+Last updated 2026-10-10. Branch `phase-1`. Remote: `https://github.com/Ethan5026/WorldSmith.git`.
 
 The goal of this document: let a fresh session pick up the work without re-deriving anything.
 It gives the product and the owner's rules, how to run and ship changes, what's done, what's next, and the traps already found.
@@ -86,7 +86,7 @@ hub ─(HTTP, bearer token)─► worker :7070 (docker.sock) ─► one itzg/min
 | `packages/mcproto` | Minecraft protocol codec (handshake/status/login), status ping, RCON client (non-pipelined) |
 | `packages/mcdata` | Generated 26.2 data (blocks, commands, game rules, data versions); `checkBlockState`, `checkGamerule`, `datapackMeta` |
 | `packages/mcworld` | NBT read/write; Anvil region/chunk reader; top-down PNG renderer; block-entity summaries; structure templates (capture, voxels, build) |
-| `packages/core` | `WorldSpec` → itzg env compiler; recipes; per-world datapack; crossplay evaluation; `BuildScript` compiler; Hunger Games kit (`games.ts`); `WorldPlan` (`plan.ts`) |
+| `packages/core` | `WorldSpec` → itzg env compiler (incl. `generatorSettings`, `VOID_WORLD`); recipes; per-world datapack; crossplay evaluation; `BuildScript` compiler; Hunger Games kit (`games.ts`); Lucky Block Boss Rush kit (`lucky.ts`); traders (`trade.ts`); `WorldPlan` (`plan.ts`) |
 | `apps/hub` | OAuth AS; MCP server (`mcp.ts`); portal API (`private-app.ts`) and PWA (`portal/`); gate decisions (`gate.ts`); access/friends/invites; worlds; builds; proposals (world plans); Modrinth catalog (`catalog.ts`); push; SQLite (`db.ts`) |
 | `apps/worker` | Docker runtime per world; backups; map import (`maps.ts`); render; template library; saved minigames (`games.ts`) |
 | `apps/gatekeeper` | TCP front door (no secrets); listens on 25565 + Wi-Fi ports |
@@ -111,7 +111,8 @@ hub ─(HTTP, bearer token)─► worker :7070 (docker.sock) ─► one itzg/min
 - **Vanilla features:** structure, feature, template.
 - **World setup:** summon, spawnpoint, gamerule.
 - **Anything else:** command.
-- **Game kit:** hunger_games.
+- **Traders:** trader (villager or wandering trader with fixed custom offers).
+- **Game kits:** hunger_games, lucky_bosses.
 
 ## 5. Run, test, deploy
 
@@ -153,6 +154,8 @@ bash scripts/security-check.sh
 | `lab` | "Builder Lab": a test lobby at x60–74, z60–74, a rotated copy at x86–100, a voxel cottage at x130, and a Hunger Games kit at (200,-60,200) with controls at (197,-60,170) |
 | `sg6-test` | Test world for the old-map upgrade (Survival Games 6, 1.6.1, "All Rights Reserved": keep private) |
 | `lab-copy` | Test copy of the "lab-games" saved minigame |
+
+**Pending proposal #4: "Lucky Block Boss Rush" (`lucky-rush`).** A void sky world with the `lucky_bosses` kit (market at 0,100,0; arena at 0,100,90) plus the `lbr` and `usrx-giant-boss` datapacks. Waiting for the owner to answer the Bedrock questions and approve in the portal. A test copy of the kit also lives in `lab` at market 600,-20,600 / arena 600,-20,690; installing it changed the lab's game rules (time frozen at noon, no mob spawning, keep inventory).
 
 The last two are test worlds; the owner may delete them in the portal.
 
@@ -200,6 +203,8 @@ The last two are test worlds; the owner may delete them in the portal.
 2. A real Hunger Games round with a friend on `hg-test`. Ask Claude to find the arena center with `view_area`, place the kit, and switch the world to adventure/survival. **The border shrink with players present is still unverified live**; the zero-player test ended the game before the shrink.
 3. If the connector shows an error in the app, reconnect it. Redeploys restart the hub briefly and cause a short 502.
 
+**Lucky Block Boss Rush (Phase 3 showcase, built):** after approval, play it with 2+ players: lucky block breaking (Lucky Block Reborn needs a player near the dropped item), deaths and knock-outs, boss balance, and how Bedrock sees the scaled bosses are not verified yet. Tune with a rebuild (`difficulty`, `luckySeconds`, `rounds`, `luckyBlocksPerPlayer`).
+
 **Phase 3, showcase content.** North star: *"Lucky Block Challenge Games like Pat & Jen, with villager trades, a fun boss and a surprise lucky block, for me (Java) and a Bedrock friend."*
 - **Crossplay build:**
   - Paper 26.2 + a lucky-block datapack or plugin (Modrinth `luckyblock-ashkiano` resolves for 26.2).
@@ -246,6 +251,9 @@ The last two are test worlds; the owner may delete them in the portal.
 - **Path rewriting.** Git Bash rewrites `/paths` in arguments; prefix docker or node commands with `MSYS_NO_PATHCONV=1`.
 - **File locks.** Windows sometimes locks a file briefly (EBUSY/UNKNOWN on write); just retry.
 - **Node's `https` `lookup` hook** may be asked for *all* addresses (`opts.all`) and must answer with an array.
+
+**Modrinth:**
+- **Datapacks are usually `project_type: "mod"`** in the v2 API, with `"datapack"` among their loaders. The resolver uses the datapack build when the server can't load the project as a mod or plugin (`catalog.ts`).
 
 **Deploy:**
 - **The gatekeeper network namespace.** Recreating the gatekeeper strands playit and Geyser in the old namespace. Always recreate them together.
