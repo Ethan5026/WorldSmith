@@ -236,7 +236,12 @@ export class WorldService {
   /** Create a fresh, independent world from a saved minigame. Doesn't start it. */
   async createFromSaved(game: SavedGame, slug: string, name: string, extras: PlanExtras = {}): Promise<WorldView> {
     if (this.row(slug)) throw new Error(`A world called "${slug}" already exists.`);
-    const spec = withExtras(WorldSpec.parse({ ...game.spec, slug, name, upgradeWorld: false, properties: { ...game.spec.properties, motd: name, ...extras.properties } }), extras);
+    const parsed = withExtras(WorldSpec.parse({ ...game.spec, slug, name, upgradeWorld: false, properties: { ...game.spec.properties, motd: name, ...extras.properties } }), extras);
+    // A copy with a void or dragon End gets a fresh End (cleared below), so its one-time setup runs again.
+    const endMode = parsed.properties.dimensions?.end;
+    const spec = endMode === "void" || endMode === "dragon"
+      ? WorldSpec.parse({ ...parsed, properties: { ...parsed.properties, dimensions: { ...parsed.properties.dimensions, endGen: Date.now().toString(36) } } })
+      : parsed;
     this.db
       .prepare("INSERT INTO worlds (slug, name, recipe, spec, created_at) VALUES (?, ?, ?, ?, ?)")
       .run(slug, name, spec.recipe ?? null, JSON.stringify(spec), Date.now());
@@ -245,7 +250,7 @@ export class WorldService {
       await this.worker.installGame(slug, game.name);
       // A void Nether/End starts empty, even if the saved game had explored them.
       const dims = spec.properties.dimensions ?? {};
-      const voids = (["nether", "end"] as const).filter((d) => dims[d] === "void");
+      const voids = (["nether", "end"] as const).filter((d) => dims[d] === "void" || dims[d] === "dragon");
       if (voids.length) await this.worker.resetDimensions(slug, voids);
     } catch (err) {
       this.db.prepare("DELETE FROM worlds WHERE slug = ?").run(slug);
@@ -277,7 +282,7 @@ export class WorldService {
    */
   async setDimensions(
     slug: string,
-    dims: { nether?: "normal" | "void"; end?: "normal" | "void" },
+    dims: { nether?: "normal" | "void"; end?: "normal" | "void" | "dragon" },
     opts: { allowRestart?: boolean } = {},
   ): Promise<{ world: WorldView; reset: ("nether" | "end")[]; safetyBackup?: string; restarted: boolean }> {
     const spec = this.spec(slug);
@@ -289,7 +294,9 @@ export class WorldService {
     }
     const wasRunning = (await this.worker.status(slug)).container === "running";
     if (wasRunning) await this.stop(slug, "dimension change");
-    const next = WorldSpec.parse({ ...spec, properties: { ...spec.properties, dimensions: { ...before, ...dims } } });
+    // A cleared End is a new End: its one-time setup (the exit-portal anchor) runs again.
+    const endGen = reset.includes("end") ? Date.now().toString(36) : before.endGen;
+    const next = WorldSpec.parse({ ...spec, properties: { ...spec.properties, dimensions: { ...before, ...dims, ...(endGen ? { endGen } : {}) } } });
     this.db.prepare("UPDATE worlds SET spec = ? WHERE slug = ?").run(JSON.stringify(next), slug);
     const safetyBackup = reset.length ? (await this.worker.resetDimensions(slug, reset)).safetyBackup.id : undefined;
     await this.reapply(slug);

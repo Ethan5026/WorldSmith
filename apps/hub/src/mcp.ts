@@ -136,14 +136,15 @@ export function createMcpServer(config: Config, services: HubServices, clientId?
       title: "Void or normal Nether / End",
       description:
         "Make a world's Nether and/or End empty void (Skyblock style) or normal again. A void Nether still has " +
-        "fortresses and bastions, floating (blazes and wither skeletons are needed to progress); a void End is empty. " +
+        "fortresses close to any portal (blazes and wither skeletons are needed to progress); a void End is empty; a " +
+        "dragon End is void plus the obsidian spires with crystals, the exit portal and the dragon (no land). " +
         "The overworld is never touched. A dimension whose mode changes has its EXPLORED LAND CLEARED (anything built " +
         "or left there is gone; a safety backup is taken first, restorable in the portal), so get the owner's OK and " +
         "tell them that. The world restarts if it's running; refused while players are online unless allowRestart.",
       inputSchema: {
         slug: slugArg,
         nether: z.enum(["normal", "void"]).optional(),
-        end: z.enum(["normal", "void"]).optional(),
+        end: z.enum(["normal", "void", "dragon"]).optional().describe("dragon = void plus the obsidian spires, crystals, exit portal and dragon fight"),
         allowRestart: z.boolean().default(false),
       },
     },

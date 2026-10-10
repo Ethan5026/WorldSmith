@@ -261,6 +261,8 @@ export class WorldRuntime {
     if (info.State.Running) throw new Error("Stop the world before resetting a dimension");
     const safety = await this.backups.create(this.container(slug), slug, "before-dimension-reset");
     const dirs = [...new Set(dims)].flatMap((d) => DIMENSION_DIRS[d]).flatMap((dir) => ["region", "entities", "poi"].map((sub) => `/data/${dir}/${sub}`));
+    // The End also forgets its dragon fight (dragon, exit portal spot, gateways), so it starts over cleanly.
+    if (dims.includes("end")) dirs.push(...DIMENSION_DIRS.end.map((dir) => `/data/${dir}/data/minecraft/ender_dragon_fight.dat`));
     await this.helper(slug, `rm -rf ${dirs.map((d) => `'${d}'`).join(" ")}`, "reset-dimension");
     return safety;
   }

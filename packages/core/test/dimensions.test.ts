@@ -42,6 +42,28 @@ test("dimensions: switching back to normal writes the vanilla 26.2 definitions (
   assert.deepEqual(json(dimFile(s, "the_end")).generator, { type: "minecraft:noise", settings: "minecraft:end", biome_source: { type: "minecraft:the_end" } });
 });
 
+test("dragon End: void with the End's own spires and platform, plus a one-time exit-portal anchor per End", () => {
+  const s = spec({ end: "dragon", endGen: "abc123" });
+  const end = json(dimFile(s, "the_end"));
+  assert.equal(end.generator.type, "minecraft:flat");
+  assert.equal(end.generator.settings.biome, "minecraft:the_end");
+  assert.deepEqual(end.generator.settings.layers, [{ block: "minecraft:air", height: 1 }], "no land");
+  const files = worldDatapack(s);
+  const load = files.find((f) => f.path.endsWith("function/load.mcfunction"));
+  assert.match(load?.kind === "inline" ? load.content : "", /scoreboard objectives add worldsmith dummy\nexecute unless score #end_anchor_abc123 worldsmith matches 1 run function worldsmith:end_anchor\/start/);
+  const place = files.find((f) => f.path.endsWith("function/end_anchor/place.mcfunction"));
+  const text = place?.kind === "inline" ? place.content : "";
+  assert.match(text, /unless loaded 0 63 0 run return run schedule/, "waits for the center chunk");
+  assert.match(text, /if block 0 63 0 minecraft:air run setblock 0 63 0 minecraft:bedrock/, "never overwrites anything");
+  // The 10 spires, each placed once at its own center (positions from 26.2's EndSpikeFeature).
+  const spikes = [...text.matchAll(/place feature minecraft:end_spike (-?\d+) 0 (-?\d+)/g)].map((m) => [Number(m[1]), Number(m[2])]);
+  assert.deepEqual(spikes, [[42, 0], [33, 24], [12, 39], [-13, 39], [-34, 24], [-42, -1], [-34, -25], [-13, -40], [12, -40], [33, -25]]);
+  assert.match(text, /scoreboard players set #end_anchor_abc123 worldsmith 1/);
+  // A plain void End has no features and no anchor.
+  const plain = spec({ end: "void" });
+  assert.ok(!worldDatapack(plain).some((f) => f.path.includes("end_anchor")));
+});
+
 test("dimension resets only ever name Nether/End folders", () => {
   for (const dirs of Object.values(DIMENSION_DIRS)) for (const d of dirs) assert.doesNotMatch(d, /overworld|^world\/?$|\.\./);
 });

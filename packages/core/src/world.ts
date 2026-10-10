@@ -71,10 +71,16 @@ export const WorldProperties = z
     enableCommandBlock: z.boolean(),
     /**
      * Skyblock-style dimensions. "void": empty, except that Nether fortresses and bastions still
-     * appear (blazes and wither skeletons are needed to progress). Only new land changes: switching an
+     * appear (blazes and wither skeletons are needed to progress); End "dragon": void plus the spires, crystals, exit portal and dragon (no island). Only new land changes: switching an
      * existing world also clears that dimension's explored land (see WorldService.setDimensions).
      */
-    dimensions: z.object({ nether: z.enum(["normal", "void"]).optional(), end: z.enum(["normal", "void"]).optional() }),
+    dimensions: z.object({
+      nether: z.enum(["normal", "void"]).optional(),
+      /** "dragon": void plus the obsidian spires, end crystals, exit portal and dragon fight (no land). */
+      end: z.enum(["normal", "void", "dragon"]).optional(),
+      /** Which End this is: WorldSmith sets a new one each time it clears the End (the exit-portal anchor is placed once per End). */
+      endGen: z.string().regex(/^[a-z0-9]{1,12}$/).optional(),
+    }),
   })
   .partial();
 export type WorldProperties = z.infer<typeof WorldProperties>;
