@@ -192,6 +192,7 @@ export class GateService {
     }
 
     if (w.state === "online") {
+      this.worlds.markActive(slug);
       this.notifyPlaying(player.name, player.role, w.name, slug);
       audit(this.db, "gate_pipe", { name: player.name, slug });
       return { action: "pipe", backend: w.backend };

@@ -371,6 +371,14 @@ export class WorldService {
     audit(this.db, "world_started", { slug, reason });
   }
 
+  /**
+   * Someone is joining right now. The server only counts them once they've finished logging in,
+   * so without this an idle world could be put to sleep under a player who is mid-join.
+   */
+  markActive(slug: string): void {
+    this.db.prepare("UPDATE worlds SET last_active_at = ? WHERE slug = ?").run(Date.now(), slug);
+  }
+
   async stop(slug: string, reason: string): Promise<void> {
     this.waking.delete(slug);
     this.statusCache.delete(slug);

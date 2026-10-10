@@ -58,6 +58,21 @@ test("the gate routes Wi-Fi ports to their world and hangs up on unused ones", a
   assert.match(JSON.stringify(login), /Wi-Fi play is off/);
 });
 
+test("idle sleep never stops a world under a player who is still joining", async () => {
+  const stopped: string[] = [];
+  const longAgo = new Date(Date.now() - 30 * 60_000).toISOString();
+  worlds.worker = {
+    // Both worlds have run for 30 minutes and the server counts nobody online (a joiner isn't counted yet).
+    status: async (slug: string) => ({ slug, container: slug === "w1" || slug === "w2" ? "running" : "exited", backend: "", startedAt: longAgo, mc: { online: true, players: { online: 0, max: 20 } } }),
+    stop: async (slug: string) => void stopped.push(slug),
+    backup: async (_slug: string, label: string) => ({ id: "20261010-000000-sleep.tar.gz", label, createdAt: "", bytes: 1 }),
+  } as unknown as WorkerClient;
+  db.prepare("UPDATE worlds SET last_active_at = ? WHERE slug IN ('w1','w2')").run(Date.parse(longAgo));
+  worlds.markActive("w1"); // the gate just piped someone into w1
+  await worlds.sleepIdleWorlds();
+  assert.deepEqual(stopped, ["w2"], "w1 stays up for the joining player; truly idle w2 sleeps");
+});
+
 test("deleting a world keeps a final backup, frees its Wi-Fi port and moves the featured world", async () => {
   const calls: string[] = [];
   worlds.worker = {
