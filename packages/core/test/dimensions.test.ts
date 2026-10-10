@@ -18,7 +18,14 @@ test("dimensions: a void Nether keeps fortresses and bastions; a void End is emp
   assert.equal(nether.type, "minecraft:the_nether");
   assert.equal(nether.generator.type, "minecraft:flat");
   assert.deepEqual(nether.generator.settings.layers, [{ block: "minecraft:air", height: 1 }]);
-  assert.deepEqual(nether.generator.settings.structure_overrides, ["minecraft:nether_complexes"]);
+  assert.deepEqual(nether.generator.settings.structure_overrides, ["worldsmith:void_fortresses", "worldsmith:void_bastions"]);
+  const fortresses = json(worldDatapack(s).find((f) => f.path.endsWith("worldgen/structure_set/void_fortresses.json")) as ReturnType<typeof dimFile>);
+  assert.deepEqual(fortresses.structures, [{ structure: "minecraft:fortress", weight: 1 }]);
+  // Worst case from any point to the nearest fortress start: the largest gap between starts on one axis
+  // is (spacing + spacing - separation) chunks; half of that on both axes, in blocks.
+  const { spacing, separation } = fortresses.placement;
+  const half = ((2 * spacing - separation) * 16) / 2;
+  assert.ok(Math.hypot(half, half) <= 200, `a fortress within 200 blocks of any portal (worst case ${Math.round(Math.hypot(half, half))})`);
   const end = json(dimFile(s, "the_end"));
   assert.equal(end.type, "minecraft:the_end");
   assert.deepEqual(end.generator.settings.structure_overrides, []);

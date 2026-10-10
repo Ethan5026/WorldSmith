@@ -46,10 +46,22 @@ const flat = (biome: string, structureSets: string[]) => ({
  * builds them from data packs at every start, so these files decide how new land generates. "normal"
  * writes the vanilla definitions back (a pack file can't be removed by re-applying, only replaced).
  */
+/**
+ * A void Nether has no land between structures, so vanilla's spacing (one fortress-or-bastion per
+ * ~430-block region) can leave the nearest fortress 450+ blocks from a portal. Void Nethers place
+ * fortresses on their own tight grid instead: one start in every 8×8-chunk cell, offset at most 4
+ * chunks, so no point is more than ~140 blocks from a fortress start. Bastions keep vanilla spacing.
+ */
+export const VOID_FORTRESS_SPACING = { spacing: 8, separation: 4 } as const;
+const VOID_STRUCTURE_SETS = {
+  void_fortresses: { placement: { type: "minecraft:random_spread", salt: 14357621, ...VOID_FORTRESS_SPACING }, structures: [{ structure: "minecraft:fortress", weight: 1 }] },
+  void_bastions: { placement: { type: "minecraft:random_spread", salt: 30084232, spacing: 27, separation: 4 }, structures: [{ structure: "minecraft:bastion_remnant", weight: 1 }] },
+};
+
 const DIMENSIONS = {
   nether: {
     file: "the_nether",
-    void: { type: "minecraft:the_nether", generator: flat("minecraft:nether_wastes", ["minecraft:nether_complexes"]) },
+    void: { type: "minecraft:the_nether", generator: flat("minecraft:nether_wastes", ["worldsmith:void_fortresses", "worldsmith:void_bastions"]) },
     normal: {
       type: "minecraft:the_nether",
       generator: { type: "minecraft:noise", settings: "minecraft:nether", biome_source: { type: "minecraft:multi_noise", preset: "minecraft:nether" } },
@@ -74,7 +86,11 @@ export function dimensionFiles(spec: WorldSpec): WorldFile[] {
     const mode = dims[d];
     if (!mode) return [];
     const def = DIMENSIONS[d];
-    return [{ kind: "inline" as const, encoding: "utf8" as const, path: `${DATAPACK_DIR}/data/minecraft/dimension/${def.file}.json`, content: JSON.stringify(def[mode], null, 2) }];
+    const file = (path: string, value: unknown): WorldFile => ({ kind: "inline", encoding: "utf8", path: `${DATAPACK_DIR}/${path}`, content: JSON.stringify(value, null, 2) });
+    return [
+      file(`data/minecraft/dimension/${def.file}.json`, def[mode]),
+      ...(d === "nether" ? Object.entries(VOID_STRUCTURE_SETS).map(([name, set]) => file(`data/worldsmith/worldgen/structure_set/${name}.json`, set)) : []),
+    ];
   });
 }
 
