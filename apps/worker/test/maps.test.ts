@@ -114,7 +114,9 @@ const castleZip = () =>
 
 test("import: report lists the world, what's skipped and why, and warnings", async () => {
   await withStore(async (store) => {
-    const report = await store.importUpload(Readable.from(await castleZip()), "castle.zip");
+    // One zip, imported twice below: zip entries carry timestamps, so building it again could differ.
+    const zip = await castleZip();
+    const report = await store.importUpload(Readable.from(zip), "castle.zip");
     assert.equal(report.worlds.length, 1);
     const w = report.worlds[0]!;
     assert.equal(w.root, "Castle Games");
@@ -129,7 +131,7 @@ test("import: report lists the world, what's skipped and why, and warnings", asy
     assert.match(report.warnings.join(" "), /programs \(Install Shaders\.exe\)/);
     assert.match(report.warnings.join(" "), /resource pack/);
     // Same file again: same import, no duplicate.
-    const again = await store.importUpload(Readable.from(await castleZip()), "castle-copy.zip");
+    const again = await store.importUpload(Readable.from(zip), "castle-copy.zip");
     assert.equal(again.id, report.id);
     assert.equal(store.list().length, 1);
   });

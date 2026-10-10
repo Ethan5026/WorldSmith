@@ -430,13 +430,17 @@ export function createMcpServer(config: Config, services: HubServices, clientId?
         status: v.status,
         world: v.result?.slug,
         error: v.result?.error,
-        ownerNote: v.result?.note,
+        ownerNote: v.result?.replacedBy ? undefined : v.result?.note,
+        replacedBy: v.result?.replacedBy,
         builds: v.result?.builds,
-        next:
-          v.status === "declined" && v.result?.note
+        next: v.result?.replacedBy
+          ? `You replaced this plan with #${v.result.replacedBy}; follow that one instead.`
+          : v.status === "declined" && v.result?.note
             ? "The owner sent this back with a note: revise the plan and propose it again."
             : v.status === "approved"
-              ? "The world exists (asleep). Use view_area to look at it and build to change it."
+              ? v.result?.error
+                ? "The world exists (asleep), but see the error: check it with view_area and finish it with build."
+                : "The world exists (asleep). Use view_area to look at it and build to change it."
               : undefined,
       });
     },

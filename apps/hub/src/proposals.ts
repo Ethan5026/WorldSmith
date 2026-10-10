@@ -99,7 +99,7 @@ export interface ProposalView {
   content: (Pick<ResolvedContent, "label" | "why" | "requiredBy"> & { title: string; type: string; version: string; url: string; license?: string })[];
   builds: { name: string; steps: number; kinds: string[] }[];
   crossplay: CrossplayReport;
-  result?: { slug?: string; error?: string; note?: string; builds?: BuildOutcome[] };
+  result?: { slug?: string; error?: string; note?: string; replacedBy?: number; builds?: BuildOutcome[] };
 }
 
 /** What a vanilla map brings, for the crossplay check. Everything in it is server-side vanilla. */
@@ -124,6 +124,25 @@ export class ProposalService {
     this.push = push;
     this.catalog = catalog;
     this.builds = builds;
+    this.recoverInterrupted();
+  }
+
+  /**
+   * A hub restart kills a build in progress, which would leave its card on "Building…" forever. The owner
+   * already approved it, so: world created → approved with a warning (Claude finishes the build steps);
+   * no world yet → failed, to be proposed again.
+   */
+  private recoverInterrupted(): void {
+    const stuck = this.db.prepare("SELECT * FROM proposals WHERE status = 'building'").all() as unknown as ProposalRow[];
+    for (const r of stuck) {
+      const slug = this.payload(r).plan.slug;
+      const exists = Boolean(this.worlds.row(slug));
+      const result = exists
+        ? { slug, error: "The hub restarted while this world was being built, so its build steps may not have finished. Ask Claude to check it and finish them." }
+        : { error: "The hub restarted before this world was created. Ask Claude to propose it again." };
+      this.db.prepare(`UPDATE proposals SET status = ?, result = ? WHERE id = ? AND status = 'building'`).run(exists ? "approved" : "failed", JSON.stringify(result), r.id);
+      audit(this.db, "proposal_interrupted", { id: r.id, slug, worldCreated: exists });
+    }
   }
 
   private row(id: number): ProposalRow {
@@ -271,7 +290,7 @@ export class ProposalService {
     for (const old of replaces) {
       this.db
         .prepare("UPDATE proposals SET status = 'declined', decided_at = ?, result = ? WHERE id = ? AND status = 'pending'")
-        .run(Date.now(), JSON.stringify({ note: `Replaced by #${id}` }), old.id);
+        .run(Date.now(), JSON.stringify({ note: `Replaced by #${id}`, replacedBy: id }), old.id);
       audit(this.db, "proposal_replaced", { id: old.id, by: id });
     }
     audit(this.db, "proposal_created", { id, kind: "world_plan", slug: plan.slug, base: plan.base.kind, content: resolution.items.length, builds: plan.builds.length, by });

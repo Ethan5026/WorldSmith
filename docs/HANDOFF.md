@@ -263,6 +263,7 @@ The last two are test worlds; the owner may delete them in the portal.
 **Deploy:**
 - **The gatekeeper network namespace.** Recreating the gatekeeper strands playit and Geyser in the old namespace. Always recreate them together.
 - **Restarts cause a brief 502** on the connector, which is expected.
+- **Never redeploy the hub while a proposal is building.** The build runs inside the hub process, so a restart kills it (this happened to Skyblock, #6: the world was created empty). Check first: `docker logs worldsmith-hub-1 --since 30m | grep -E "proposal_|world_built"`, or `proposal_status`. If it happens anyway, the hub marks the card on its next start (world created → approved with a warning; no world → failed), and Claude finishes the plan's build steps with `build`.
 - **Docker Desktop can quit on its own** (2026-10-10, cause unknown; logs rotate on restart). Everything is down then and the connector shows 502. Start Docker Desktop if no WSL terminals are open; the compose services restart by themselves, and a world that was running is cut off (exit 255) and wakes again on the next join.
 - **The laptop's own Tailscale app may be logged out**, so the portal/tailnet URLs fail from the laptop itself (curl gets "couldn't connect"). Don't log it in (owner rule); check the hub from inside the container instead (`docker exec worldsmith-hub-1 wget -qO- http://127.0.0.1:3000/...`).
 

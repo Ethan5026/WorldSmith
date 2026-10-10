@@ -213,8 +213,25 @@ test("Claude can revise its own pending plan: the new card replaces the old one;
   const old = await proposals.get(first.id);
   assert.equal(old.status, "declined");
   assert.equal(old.result?.note, `Replaced by #${second.id}`);
+  assert.equal(old.result?.replacedBy, second.id);
   assert.equal((await proposals.get(second.id)).status, "pending");
   await assert.rejects(proposals.approve(first.id, { textures: "required", behavior: "best_effort" }), /already declined|declined/);
+});
+
+test("builds cut off by a hub restart don't stay 'Building…' forever", async () => {
+  const made = await proposals.proposeWorldPlan(plan, "Claude");
+  const early = await proposals.proposeWorldPlan({ ...plan, slug: "lucky-two" }, "Claude");
+  // Simulate a restart mid-build: both were claimed, only the first world got created.
+  db.prepare("UPDATE proposals SET status = 'building' WHERE id IN (?, ?)").run(made.id, early.id);
+  proposals.worlds.row = ((slug: string) => (slug === "lucky-islands" ? { slug } : undefined)) as typeof proposals.worlds.row;
+  const restarted = new ProposalService(db, proposals.worlds, proposals.push, proposals.catalog, proposals.builds);
+  const a = await restarted.get(made.id);
+  assert.equal(a.status, "approved", "the owner already approved it and the world exists");
+  assert.equal(a.result?.slug, "lucky-islands");
+  assert.match(a.result?.error ?? "", /hub restarted while this world was being built/);
+  const b = await restarted.get(early.id);
+  assert.equal(b.status, "failed");
+  assert.match(b.result?.error ?? "", /propose it again/);
 });
 
 test("world plans that need fixing are never filed; owners can send plans back with a note", async () => {
