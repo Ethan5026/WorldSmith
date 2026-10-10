@@ -145,14 +145,14 @@ bash scripts/security-check.sh
 
 **Stack:** up and healthy (hub, worker, gatekeeper, playit, Geyser, ts).
 
-**Worlds** (2026-10-10 evening; the owner deleted ,  and ):
+**Worlds** (2026-10-10 evening; the owner deleted `lab`, `lab-copy` and `sg6-test`):
 
 | Slug | What it is |
 |---|---|
-|  | **Featured** (where friends join). The owner's OneBlock (BentoBox/AOneBlock, crossplay), Wi-Fi port 25571 |
-|  | "Hunger Games Test": an MIT CurseForge map, creative mode as the author saved it |
-|  | **Classic Skyblock** (proposal #6), being played. Void sky world, plains biome so mobs spawn. L island at 0,64,0 with an oak and a chest (lava bucket + ice); sand island at 60,64,0 (sandstone base so the sand can't fall) with a cactus and a chest (10 obsidian, melon + pumpkin seeds). Spawn 1,67,4, respawn_radius 0, spawn protection 0, Wi-Fi port 25570. Its build was cut off by a hub redeploy and re-run by Claude; the card's "may not have finished" warning is stale. |
-|  | **Lucky Block Boss Rush** (proposal #7, approved with textures best_effort / behavior required).  kit: market 0,100,0, arena 0,100,90;  +  datapacks; optional Java resource pack (LuckyBlock_RP). Not played yet. |
+| `oneblock` | **Featured** (where friends join). The owner's OneBlock (BentoBox/AOneBlock, crossplay), Wi-Fi port 25571 |
+| `hg-test` | "Hunger Games Test": an MIT CurseForge map, creative mode as the author saved it |
+| `skyblock` | **Classic Skyblock** (proposal #6), being played. Void sky world, plains biome so mobs spawn. L island at 0,64,0 with an oak and a chest (lava bucket + ice); sand island at 60,64,0 (sandstone base so the sand can't fall) with a cactus and a chest (10 obsidian, melon + pumpkin seeds). Spawn 1,67,4, respawn_radius 0, spawn protection 0, Wi-Fi port 25570. Its build was cut off by a hub redeploy and re-run by Claude; the card's "may not have finished" warning is stale. |
+| `lucky-rush` | **Lucky Block Boss Rush** (proposal #7, approved with textures best_effort / behavior required). `lucky_bosses` kit: market 0,100,0, arena 0,100,90; `lbr` + `usrx-giant-boss` datapacks; optional Java resource pack (LuckyBlock_RP). Not played yet. |
 
 **Libraries on the worker:**
 - **Template library:** `lobby`.
