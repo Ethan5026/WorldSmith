@@ -6,3 +6,6 @@ export * from "./recipes.ts";
 export * from "./datapack.ts";
 export * from "./bedrock.ts";
 export * from "./build.ts";
+export * from "./lucky.ts";
+export * from "./trade.ts";
+export * from "./snbt.ts";

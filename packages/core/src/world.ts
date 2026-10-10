@@ -59,11 +59,16 @@ export const WorldProperties = z
     spawnProtection: z.number().int().min(0).max(64),
     levelType: z.enum(["normal", "flat", "large_biomes", "amplified", "single_biome_surface"]),
     seed: z.string().max(64),
+    /** Flat world preset JSON (levelType flat), e.g. a void sky world: VOID_WORLD. */
+    generatorSettings: z.string().max(2000),
     allowFlight: z.boolean(),
     enableCommandBlock: z.boolean(),
   })
   .partial();
 export type WorldProperties = z.infer<typeof WorldProperties>;
+
+/** generatorSettings for an empty sky world (with levelType flat): no ground, no structures, the_void biome. */
+export const VOID_WORLD = JSON.stringify({ layers: [{ block: "minecraft:air", height: 1 }], biome: "minecraft:the_void", structure_overrides: [], features: false, lakes: false });
 
 export const WorldSpec = z.object({
   slug: Slug,
@@ -131,6 +136,7 @@ export function compileWorld(spec: WorldSpec, opts: { rconPassword: string }): C
     ["spawnProtection", "SPAWN_PROTECTION", String],
     ["levelType", "LEVEL_TYPE", String],
     ["seed", "SEED", String],
+    ["generatorSettings", "GENERATOR_SETTINGS", String],
     ["allowFlight", "ALLOW_FLIGHT", (v: boolean) => String(v).toUpperCase()],
     ["enableCommandBlock", "ENABLE_COMMAND_BLOCK", (v: boolean) => String(v).toUpperCase()],
   ];

@@ -92,3 +92,25 @@ One build step sets up a whole game: a `worldsmith_game` datapack (loot tables `
 - Install labels come from Modrinth's client/server sides: a client-required mod is "Friends install pack" (and Bedrock can't join); server plugins and datapacks are "No install needed". Plugins default to Bedrock "approximate" (menus/custom items may differ) unless Claude states otherwise.
 - **Saved minigames**: snapshot of a world's data + spec (no player data, access lists, logs or jars), stored on the worker. "Make a copy" proposes a plan with a `saved` base; each copy is an independent world. Verified live: the lab (lobbies, cottage, Hunger Games kit) saved, copied, booted, and its Start button ran.
 - Worlds can now be deleted from the portal (two taps; owner only); a `before-delete` backup is kept on the worker.
+
+## Lucky Block Boss Rush (`lucky_bosses` build op) ✅ verified in the lab (no players yet)
+
+A Pat & Jen style "Lucky Block Challenge Games" kit for 2-4 players, in one build step (`packages/core/src/lucky.ts`):
+a floating **Sky Colosseum** (lucky block spots, start pads, stands) and a **Lucky Bazaar** market (fountain with a
+lucky block statue, three striped stalls, the Arena Gate with FIGHT / NEW GAME buttons and a NEXT BOSS sign).
+Each round: break lucky blocks (timer boss bar), then a random boss at night, then emeralds and back to the market.
+The last round is always the Giant King. It pairs with two Modrinth datapacks: `lbr` (Lucky Block Reborn, a datapack
+port of the classic Lucky Block mod) and `usrx-giant-boss`.
+
+Verified live on Paper 26.2:
+- **Traders:** `VillagerData:{profession,level,type}`; offers `{buy:{id,count},sell:{id,count,components},maxUses,rewardExp:0b,xp:0,priceMultiplier:0f}`; a wandering trader with `DespawnDelay:0` never leaves. Enchantments are a plain map: `"minecraft:enchantments":{"minecraft:smite":5}`. Potions: `"minecraft:potion_contents":{potion:"minecraft:long_fire_resistance"}`.
+- **Big bosses:** `attribute @s minecraft:scale base set 3` and `max_health` (capped at 1024) work on any mob; summon NBT `attributes:[{id:"minecraft:scale",base:2.5}]` too.
+- **Giant Boss pack:** `function giant:spawn` makes a 6× zombie (tag `GiantBoss`, 200 HP, 20 attack damage) with its own boss bar `giant:health_<id>`, and spawns 4 `GiantMinion` zombies every 10 s **with no limit, even with nobody near** (72 after 5 minutes). The kit caps them at 12.
+- **Calling another pack's function** directly fails the whole function at load if that pack is missing. Call it through a macro (`$function $(fn)`), which is only resolved when it runs.
+- **Datapack order:** packs found in `world/datapacks` at first boot are enabled automatically, but a pack enabled later sits *below* them. To override another pack's functions: `datapack disable "file/x"` then `datapack enable "file/x" last`.
+- **Repairs:** a structure template that includes `air` entries clears whatever is there when re-placed. The arena template is re-placed at the start of every round.
+- **Unset scores fail comparisons:** `execute if score #x lb matches ..5` is false when `#x` was never set. Set counters before using them.
+- **Spiders don't target players in daylight**, so boss fights run at night (`time set 18000`) and the lucky phase at noon.
+- **`damage <target>` takes one entity:** use `execute as @a[...] run damage @s 6 minecraft:mob_attack by <boss>`.
+
+Not verified yet (needs players): breaking lucky blocks (Lucky Block Reborn's outcomes run when a player is near the dropped item), deaths/knock-outs, and how Bedrock players see scaled bosses.

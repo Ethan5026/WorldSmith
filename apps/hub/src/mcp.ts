@@ -11,7 +11,7 @@ import type { Config } from "./config.ts";
 import type { HubServices } from "./services.ts";
 import { audit } from "./db.ts";
 import { checkBlockState, checkGamerule, LEGACY_GAMERULES, loadVersion, type McVersionData } from "@worldsmith/mcdata";
-import { BuildScript, TemplateName, WorldPlan } from "@worldsmith/core";
+import { BuildScript, TemplateName, VOID_WORLD, WorldPlan } from "@worldsmith/core";
 import { WorldFromMap } from "./proposals.ts";
 import type { MapReport } from "./worker-client.ts";
 
@@ -191,6 +191,11 @@ export function createMcpServer(config: Config, services: HubServices, clientId?
         "'hunger_games' sets up a whole game in one step: spawn pads around the center, center chests and buried hidden " +
         "barrels with loot tables, a world border that shrinks after a grace period, a countdown, eliminations and a " +
         "winner, run by a command-block control panel (Start, Reset, clock) placed at 'controls'. " +
+        "'trader' places a villager (any job, or a wandering trader) with custom offers that never run out or change price. " +
+        "'lucky_bosses' builds a whole Lucky Block Boss Rush (Pat & Jen style, 2-4 players): a floating Sky Colosseum and " +
+        "a Lucky Bazaar market with themed traders, rounds of lucky blocks then a random boss, emerald rewards, and the Giant " +
+        "King as the final boss; pair it with the Modrinth datapacks lbr and usrx-giant-boss, ideally in a void sky world " +
+        `(properties levelType flat, generatorSettings ${VOID_WORLD}). ` +
         "Coordinates are relative to 'origin' (use player_position to build where " +
         "someone stands; y is the block they stand in). Everything is validated against the world's exact Minecraft " +
         "version before anything runs, a backup is taken first (the owner can restore it to undo), and the report " +

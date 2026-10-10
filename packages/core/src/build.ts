@@ -5,6 +5,9 @@
 import { z } from "zod";
 import { checkBlockState, checkGamerule, type McVersionData } from "@worldsmith/mcdata";
 import { compileHungerGames, HungerGamesOp } from "./games.ts";
+import { compileLuckyBosses, LuckyBossesOp } from "./lucky.ts";
+import { snbtString } from "./snbt.ts";
+import { Profession, Trade, traderEntity } from "./trade.ts";
 import { buildStructure, STRUCTURE_DIR, STRUCTURE_NAMESPACE, structureHash, StructureError, voxelBlocks } from "@worldsmith/mcworld";
 
 const Vec = z.tuple([z.number().int(), z.number().int(), z.number().int()]);
@@ -99,7 +102,17 @@ export const BuildOp = z.discriminatedUnion("op", [
       .max(96)
       .describe("Bottom layer first; each layer lists rows from north to south; each character is one block from west to east. Space or . leaves the world's block as it is."),
   }),
+  z.object({
+    op: z.literal("trader"),
+    at: Vec,
+    profession: Profession.describe("Villager job (sets the outfit), or wandering for a wandering trader"),
+    name: z.string().min(1).max(40),
+    color: z.string().max(20).default("gold"),
+    facing: Facing.default("south"),
+    trades: z.array(Trade).min(1).max(20).describe("Custom offers; prices never change and stock never runs out"),
+  }),
   HungerGamesOp,
+  LuckyBossesOp,
 ]);
 export type BuildOp = z.infer<typeof BuildOp>;
 
@@ -126,10 +139,7 @@ export interface CompiledBuild {
 const FILL_LIMIT = 32768;
 const RCON_MAX = 1446;
 
-/** SNBT double-quoted string. */
-export function snbtString(s: string): string {
-  return `"${s.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
-}
+export { snbtString };
 
 function textComponent(line: z.infer<typeof TextLine>): string {
   if (typeof line === "string") return snbtString(line);
@@ -299,6 +309,30 @@ export function compileBuild(script: BuildScript, data?: McVersionData, opts: Co
         block(op.padBlock, `${where} padBlock`);
         const g = compileHungerGames(op, script.origin, script.name, data);
         for (const f of g.files) files.push({ path: f.path, base64: Buffer.from(f.content, "utf8").toString("base64") });
+        commands.push(...g.commands);
+        points.push(...g.points);
+        break;
+      }
+      case "trader": {
+        // Summon with no offers, then add each offer separately: every command stays under the RCON limit.
+        const tag = `ws_new_trader_${i}`;
+        const e = traderEntity({ profession: op.profession, name: op.name, color: op.color, facing: op.facing, tags: [tag, "ws_trader"], trades: [] });
+        commands.push(`summon ${e.entity} ${pos(at(op.at))} ${e.nbt}`);
+        for (const offer of traderEntity({ profession: op.profession, name: op.name, facing: op.facing, trades: op.trades }).offers) {
+          commands.push(`data modify entity @e[tag=${tag},limit=1] Offers.Recipes append value ${offer}`);
+        }
+        commands.push(`tag @e[tag=${tag}] remove ${tag}`);
+        break;
+      }
+      case "lucky_bosses": {
+        const [a, m] = [op.arena, op.market];
+        if (Math.hypot(a[0] - m[0], a[2] - m[2]) < 70) {
+          errors.push(`${where}: keep the arena at least 70 blocks from the market (they are ${Math.round(Math.hypot(a[0] - m[0], a[2] - m[2]))} apart).`);
+          break;
+        }
+        const g = compileLuckyBosses(op, script.origin, data);
+        for (const f of g.files) files.push({ path: f.path, base64: Buffer.from(f.content, "utf8").toString("base64") });
+        for (const st of g.structures) files.push({ path: st.path, base64: st.data.toString("base64") });
         commands.push(...g.commands);
         points.push(...g.points);
         break;

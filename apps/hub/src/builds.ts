@@ -68,7 +68,7 @@ export class BuildService {
     if (compiled.errors.length) return { ok: false, ...base, errors: compiled.errors };
     const notes: string[] = [];
 
-    const needsCommandBlocks = script.ops.some((o) => o.op === "command_block" || o.op === "teleport_pad" || o.op === "hunger_games");
+    const needsCommandBlocks = script.ops.some((o) => o.op === "command_block" || o.op === "teleport_pad" || o.op === "hunger_games" || o.op === "lucky_bosses");
     if (needsCommandBlocks && !spec.properties.enableCommandBlock) {
       const view = await this.worlds.view(slug, true);
       if (view.state === "online" && view.players.online > 0 && !opts.allowRestart) {
