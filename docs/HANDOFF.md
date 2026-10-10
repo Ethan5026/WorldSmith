@@ -155,7 +155,7 @@ bash scripts/security-check.sh
 | `sg6-test` | Test world for the old-map upgrade (Survival Games 6, 1.6.1, "All Rights Reserved": keep private) |
 | `lab-copy` | Test copy of the "lab-games" saved minigame |
 
-**Pending proposal #4: "Lucky Block Boss Rush" (`lucky-rush`).** A void sky world with the `lucky_bosses` kit (market at 0,100,0; arena at 0,100,90) plus the `lbr` and `usrx-giant-boss` datapacks. Waiting for the owner to answer the Bedrock questions and approve in the portal. A test copy of the kit also lives in `lab` at market 600,-20,600 / arena 600,-20,690; installing it changed the lab's game rules (time frozen at noon, no mob spawning, keep inventory).
+**Pending proposal #4: "Lucky Block Boss Rush" (`lucky-rush`).** A void sky world with the `lucky_bosses` kit (market at 0,100,0; arena at 0,100,90) plus the `lbr` and `usrx-giant-boss` datapacks. The owner sent it back: "add a texture for the bedrock users for the block". Done: Geyser now shows lucky blocks with the lucky block texture (`apps/geyser/content`), and the plan gets the matching optional Java resource pack. Re-propose as #5 with `properties.resourcePack`. A test copy of the kit also lives in `lab` at market 600,-20,600 / arena 600,-20,690; installing it changed the lab's game rules (time frozen at noon, no mob spawning, keep inventory).
 
 The last two are test worlds; the owner may delete them in the portal.
 

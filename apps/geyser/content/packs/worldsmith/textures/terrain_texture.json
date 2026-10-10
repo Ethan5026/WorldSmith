@@ -1,0 +1,11 @@
+{
+  "resource_pack_name": "worldsmith",
+  "texture_name": "atlas.terrain",
+  "padding": 8,
+  "num_mip_levels": 4,
+  "texture_data": {
+    "ws_lucky_top": { "textures": "textures/blocks/ws_lucky_top" },
+    "ws_lucky_side": { "textures": "textures/blocks/ws_lucky_side" },
+    "ws_lucky_bottom": { "textures": "textures/blocks/ws_lucky_bottom" }
+  }
+}

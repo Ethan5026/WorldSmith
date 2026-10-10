@@ -1,5 +1,11 @@
 # Geyser Standalone: translates Bedrock (UDP 19132) to Java for the gatekeeper on 127.0.0.1:25565.
 # Build from the repo root:  docker build -f apps/geyser/Dockerfile .
+# Bedrock resource pack for WorldSmith games (lucky block textures), zipped as an .mcpack.
+FROM alpine:3.20 AS pack
+RUN apk add --no-cache zip
+COPY apps/geyser/content/packs/worldsmith /pack
+RUN cd /pack && zip -qrX /worldsmith.mcpack .
+
 FROM eclipse-temurin:21-jre-alpine
 
 # Pinned build, verified by hash at build time.
@@ -12,6 +18,9 @@ RUN mkdir -p /opt/geyser \
 RUN adduser -D -u 1000 geyser && mkdir -p /geyser && chown geyser /geyser
 COPY apps/geyser/entrypoint.sh /entrypoint.sh
 COPY apps/geyser/config.yml /opt/geyser/config.yml
+# Custom content: Bedrock pack + Geyser block mappings (installed fresh by the entrypoint).
+COPY --from=pack /worldsmith.mcpack /opt/geyser/packs/worldsmith.mcpack
+COPY apps/geyser/content/custom_mappings /opt/geyser/custom_mappings
 WORKDIR /geyser
 USER geyser
 ENTRYPOINT ["/bin/sh", "/entrypoint.sh"]

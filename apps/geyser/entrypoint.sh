@@ -2,6 +2,11 @@
 # Fresh config every start (the template is the source of truth) + the shared Floodgate key.
 set -eu
 cp /opt/geyser/config.yml /geyser/config.yml
+# WorldSmith custom content (lucky block textures for Bedrock), also from the image every start.
+mkdir -p /geyser/packs /geyser/custom_mappings
+rm -f /geyser/packs/worldsmith.mcpack /geyser/custom_mappings/worldsmith_*.json
+cp /opt/geyser/packs/worldsmith.mcpack /geyser/packs/
+cp /opt/geyser/custom_mappings/worldsmith_*.json /geyser/custom_mappings/
 if [ -z "${FLOODGATE_KEY_B64:-}" ]; then
   echo "FLOODGATE_KEY_B64 is not set; Bedrock players can't be authenticated" >&2
   exit 1

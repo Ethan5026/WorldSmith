@@ -92,3 +92,13 @@ Geyser emulates one Java version: **26.2** today (26.3 support is in PR #6712, p
 - Consoles: https://geysermc.org/wiki/geyser/using-geyser-with-consoles/ · BedrockConnect: https://github.com/Pugmatt/BedrockConnect · Phantom: https://github.com/jhead/phantom
 - Floodgate linking: https://geysermc.org/wiki/floodgate/linking/
 - Limitations: https://geysermc.org/wiki/geyser/current-limitations/ · GeyserIntegratedPack: https://geysermc.org/wiki/other/geyserintegratedpack/ · Hurricane: https://geysermc.org/wiki/other/hurricane/ · EmoteOffhand: https://github.com/GeyserMC/EmoteOffhandExtension · Extensions list: https://github.com/GeyserMC/GeyserExtensionList
+
+## Custom block textures for Bedrock (built in) ✅ registered
+
+Geyser loads WorldSmith's own Bedrock pack and block mappings from the image (`apps/geyser/content`; the entrypoint copies them into `/geyser/packs` and `/geyser/custom_mappings` at every start, like `config.yml`).
+
+- **Lucky blocks:** a double `petrified_oak_slab` (Lucky Block Reborn's lucky block) shows as a yellow "?" lucky block on Bedrock. Only that one state is overridden (`only_override_states`), and petrified oak slabs don't exist in normal survival, so it's safe for every world. Textures: Lucky Block Reborn by LLEVC, CC BY 4.0 (`apps/geyser/content/ATTRIBUTION.md`).
+- Geyser's log shows it: "Registered 200 custom block overrides" / "Registered 8 custom blocks" (one more than before).
+- **Not covered:** the Lucky Block *item* in a Bedrock player's hand still looks like an oak slab.
+- **Java** players get the matching look from the optional server resource pack (`properties.resourcePack`, Modrinth CDN only, sha1-pinned): Lucky Block Reborn's `LuckyBlock_RP.zip`.
+- **Deploying Geyser** recreates the gatekeeper too (compose `depends_on ... restart: true`). Recreate playit afterwards or deploy all three together.

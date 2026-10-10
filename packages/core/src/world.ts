@@ -61,6 +61,12 @@ export const WorldProperties = z
     seed: z.string().max(64),
     /** Flat world preset JSON (levelType flat), e.g. a void sky world: VOID_WORLD. */
     generatorSettings: z.string().max(2000),
+    /** Java resource pack offered on join (Bedrock players get theirs from Geyser). Modrinth CDN only, hash-pinned. */
+    resourcePack: z.object({
+      url: z.url({ protocol: /^https$/, hostname: /^cdn\.modrinth\.com$/ }),
+      sha1: z.string().regex(/^[0-9a-f]{40}$/),
+      required: z.boolean().default(false).describe("true = players who decline can't join"),
+    }),
     allowFlight: z.boolean(),
     enableCommandBlock: z.boolean(),
   })
@@ -143,6 +149,11 @@ export function compileWorld(spec: WorldSpec, opts: { rconPassword: string }): C
   for (const [key, envName, fmt] of map) {
     const v = p[key];
     if (v !== undefined) env[envName] = fmt(v as never);
+  }
+  if (p.resourcePack) {
+    env.RESOURCE_PACK = p.resourcePack.url;
+    env.RESOURCE_PACK_SHA1 = p.resourcePack.sha1;
+    env.RESOURCE_PACK_ENFORCE = p.resourcePack.required ? "TRUE" : "FALSE";
   }
   if (spec.crossplay.bedrock) {
     // Floodgate (Bedrock) players can't sign chat messages; Java servers must not require it.

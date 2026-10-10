@@ -109,6 +109,18 @@ test("trader op: summons the trader, then adds each offer in its own short comma
   assert.equal(c.commands[3], "tag @e[tag=ws_new_trader_0] remove ws_new_trader_0");
 });
 
+test("Java resource pack: hash-pinned Modrinth CDN files only, optional unless required", () => {
+  const base = { slug: "sky", name: "Sky", minecraft: { version: "26.2", protocol: 776, type: "PAPER" }, memoryMb: 2048 };
+  const pack = { url: "https://cdn.modrinth.com/data/bnWTE1T8/versions/FzAA3Cbr/LuckyBlock_RP.zip", sha1: "815c246e3d8e360d73f8165610f95fd43d52d37c" };
+  const env = compileWorld(WorldSpec.parse({ ...base, properties: { resourcePack: pack } }), { rconPassword: "x".repeat(24) }).env;
+  assert.equal(env.RESOURCE_PACK, pack.url);
+  assert.equal(env.RESOURCE_PACK_SHA1, pack.sha1);
+  assert.equal(env.RESOURCE_PACK_ENFORCE, "FALSE");
+  for (const url of ["https://evil.example/pack.zip", "http://cdn.modrinth.com/x.zip", "https://cdnxmodrinth.com/x.zip"]) {
+    assert.equal(WorldSpec.safeParse({ ...base, properties: { resourcePack: { ...pack, url } } }).success, false, url);
+  }
+});
+
 test("void sky worlds: generatorSettings reaches the server", () => {
   const spec = WorldSpec.parse({
     slug: "sky",
