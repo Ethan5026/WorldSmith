@@ -113,4 +113,6 @@ Verified live on Paper 26.2:
 - **Spiders don't target players in daylight**, so boss fights run at night (`time set 18000`) and the lucky phase at noon.
 - **`damage <target>` takes one entity:** use `execute as @a[...] run damage @s 6 minecraft:mob_attack by <boss>`.
 
+- **Void sky world:** itzg `LEVEL_TYPE=flat` + `GENERATOR_SETTINGS` = `VOID_WORLD` boots Paper 26.2 cleanly, and the whole plan build (datapacks, kit, traders, spawn on the Bazaar) ran on it in a throwaway test server.
+
 Not verified yet (needs players): breaking lucky blocks (Lucky Block Reborn's outcomes run when a player is near the dropped item), deaths/knock-outs, and how Bedrock players see scaled bosses.

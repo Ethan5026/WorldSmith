@@ -258,6 +258,8 @@ The last two are test worlds; the owner may delete them in the portal.
 **Deploy:**
 - **The gatekeeper network namespace.** Recreating the gatekeeper strands playit and Geyser in the old namespace. Always recreate them together.
 - **Restarts cause a brief 502** on the connector, which is expected.
+- **Docker Desktop can quit on its own** (2026-10-10, cause unknown; logs rotate on restart). Everything is down then and the connector shows 502. Start Docker Desktop if no WSL terminals are open; the compose services restart by themselves, and a world that was running is cut off (exit 255) and wakes again on the next join.
+- **The laptop's own Tailscale app may be logged out**, so the portal/tailnet URLs fail from the laptop itself (curl gets "couldn't connect"). Don't log it in (owner rule); check the hub from inside the container instead (`docker exec worldsmith-hub-1 wget -qO- http://127.0.0.1:3000/...`).
 
 **Portal (iPhone):**
 - **Form controls need 16 px text,** or Safari zooms in.
