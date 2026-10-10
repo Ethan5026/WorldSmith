@@ -102,7 +102,10 @@ export class Catalog {
       if (!project) return void issues.push(`"${ref}" isn't a Modrinth project (check the slug with search_catalog).`);
       if (seen.has(project.id)) return;
       seen.add(project.id);
-      const isDatapack = project.project_type === "datapack";
+      // Modrinth's API reports most datapacks as project_type "mod" with a "datapack" loader. Use the datapack
+      // build whenever this server type can't load the project as a mod or plugin.
+      const canLoad = (project.loaders ?? []).some((l) => loaders.includes(l));
+      const isDatapack = project.project_type === "datapack" || (!canLoad && (project.loaders ?? []).includes("datapack"));
       if (!isDatapack && !["mod", "plugin"].includes(project.project_type)) {
         return void issues.push(`${project.title} is a ${project.project_type}; only plugins, mods and datapacks can go into a world.`);
       }
