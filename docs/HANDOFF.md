@@ -46,14 +46,16 @@ These also live in Claude's auto-memory. The code enforces them; keep it that wa
 
 ## 3. Hardware and network
 
-- **Now:** the **laptop** (Windows 11, i7-11800H, 16 GB, Docker Desktop) runs everything as one box: hub + worker.
-- **Later:**
-  - A **mini PC** (Linux) takes over as the single box. Moving there must stay a supported operation (Phase 4).
-  - The HP t240 is optional or retired.
-- **Laptop network quirks:**
-  - The Wi-Fi address is `192.168.40.177` (DHCP). It's saved in the portal's `lan_address` setting.
-  - **NordVPN** (NordLynx adapter) is installed; its "Invisibility on LAN" setting can block Wi-Fi play.
-  - Windows marks the Wi-Fi as **Public**. Docker Desktop's inbound rules already allow TCP and UDP on Public.
+- **Now:** the **mini PC** `gru-server` (Ubuntu 26.04 LTS, Ryzen 5 7640HS, Docker Engine) runs everything as one box: hub + worker. It took over from the Windows laptop on 2026-10-20 with every volume moved, so the Tailscale node, playit tunnels and Floodgate key are unchanged.
+  - Repo: `/home/gruman/repos/WorldSmith`, run as user `gruman`. Node comes from fnm (default alias, v24).
+  - The same box also runs Home Assistant and Sunshine (gaming account `gamer`). Leave those alone.
+- **The laptop** keeps its old volumes (stack stopped, not removed) as a rollback until about 2026-11-03. **Never start WorldSmith there while the mini PC runs it**: two `ts` containers with one identity, or two playit agents with one secret, fight each other.
+- The HP t240 is optional or retired.
+- **Mini PC network:**
+  - Wired, at `192.168.40.46` (reserved on the router). It's saved in the portal's `lan_address` setting. `minipc.local` doesn't resolve, so use the IP.
+  - The host is on the tailnet as `minipc`. Tailscale SSH there is in check mode (browser sign-in each time), so plain SSH to the LAN IP with a key is easier from home.
+  - **Wi-Fi play announcer:** systemd user service `worldsmith-lan-announce` (`~/.config/systemd/user/`, lingering on, so it starts at boot). Logs: `journalctl --user -u worldsmith-lan-announce`.
+  - The Wi-Fi play ports (25570-25579/tcp, 19132/udp) are published on all interfaces on purpose, so `security-check.sh` flags them. The host firewall (migration runbook, Phase 6) should limit them to the LAN.
 - **Addresses:**
   - **Java (playit):** `pgsql-bucks.tun.ply.gg`.
   - **Bedrock:** `147.185.221.214:23224`.

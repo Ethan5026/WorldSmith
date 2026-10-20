@@ -16,7 +16,7 @@ Read **docs/HANDOFF.md** first: it covers the current state, what's next, how to
   - `pnpm typecheck && pnpm test` (with `set -o pipefail`); commit only on `ℹ fail 0`.
   - Commit as you go and push to `phase-1`.
 - **Deploying:** `docker compose -f deploy/compose.yaml -f deploy/compose.dev.yaml --profile hub --profile worker up -d --build <services>`. When the gatekeeper changes, always include `gatekeeper playit geyser`.
-- **Editing on this Windows box:**
-  - Use the Edit/Write tools for code containing backslashes or apostrophes. Bash heredocs collapse `\\`.
-  - Prefix docker commands that take `/paths` with `MSYS_NO_PATHCONV=1`.
+- **The live box is the Ubuntu mini PC** (`gru-server`, `192.168.40.46`, user `gruman`, repo `~/repos/WorldSmith`). The old Windows laptop is a stopped rollback copy: never start the stack there.
+  - Run the hub's internals with `docker compose -f deploy/compose.yaml exec -T hub node --input-type=module - < script` (the container's rootfs is read-only, so pipe scripts in).
+  - Wi-Fi play announcer: `systemctl --user status worldsmith-lan-announce`.
 - **Communication:** the owner works from their phone. Explain results in plain language and say what they should try.
